@@ -1,0 +1,28 @@
+{
+  "typescript.preferences.importModuleSpecifier": "relative",
+  "typescript.suggest.autoImports": true,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "files.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.nx": true
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/.nx": true
+  },
+  "eslint.workingDirectories": [
+    "apps/api",
+    "apps/web",
+    "apps/wa-worker",
+    "libs/types",
+    "libs/utils",
+    "libs/queue"
+  ],
+  "nx.enableTelemetry": false
+}

@@ -1,0 +1,22 @@
+{
+  "recommendations": [
+    "nrwl.angular-console",
+    "angular.ng-template",
+    "ms-vscode.vscode-typescript-next",
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "bradlc.vscode-tailwindcss",
+    "ms-vscode.vscode-json",
+    "redhat.vscode-yaml",
+    "ms-vscode.vscode-docker",
+    "ms-vscode.vscode-npm-script",
+    "christian-kohler.path-intellisense",
+    "formulahendry.auto-rename-tag",
+    "ms-vscode.vscode-typescript-tslint-plugin",
+    "streetsidesoftware.code-spell-checker",
+    "gruntfuggly.todo-tree",
+    "ms-vscode.vscode-github-issue-notebooks",
+    "github.vscode-pull-request-github",
+    "ms-vscode.vscode-git-graph"
+  ]
+}

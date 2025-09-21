@@ -1,0 +1,65 @@
+{
+  "name": "wa-worker",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/wa-worker/src",
+  "projectType": "application",
+  "targets": {
+    "build": {
+      "executor": "@nx/webpack:webpack",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "target": "node",
+        "compiler": "tsc",
+        "outputPath": "dist/apps/wa-worker",
+        "main": "apps/wa-worker/src/main.ts",
+        "tsConfig": "apps/wa-worker/tsconfig.app.json",
+        "assets": ["apps/wa-worker/src/assets"],
+        "isolatedConfig": true,
+        "webpackConfig": "apps/wa-worker/webpack.config.js"
+      },
+      "configurations": {
+        "production": {
+          "optimization": true,
+          "extractLicenses": true
+        }
+      }
+    },
+    "serve": {
+      "executor": "@nx/js:node",
+      "defaultConfiguration": "development",
+      "options": {
+        "buildTarget": "wa-worker:build"
+      },
+      "configurations": {
+        "development": {
+          "buildTarget": "wa-worker:build:development"
+        },
+        "production": {
+          "buildTarget": "wa-worker:build:production"
+        }
+      }
+    },
+    "lint": {
+      "executor": "@nx/eslint:lint",
+      "outputs": ["{options.outputFile}"],
+      "options": {
+        "lintFilePatterns": ["apps/wa-worker/**/*.ts"]
+      }
+    },
+    "test": {
+      "executor": "@nx/jest:jest",
+      "outputs": ["{workspaceRoot}/coverage/{projectRoot}"],
+      "options": {
+        "jestConfig": "apps/wa-worker/jest.config.ts",
+        "passWithNoTests": true
+      },
+      "configurations": {
+        "ci": {
+          "ci": true,
+          "coverageReporters": ["text"]
+        }
+      }
+    }
+  },
+  "tags": []
+}

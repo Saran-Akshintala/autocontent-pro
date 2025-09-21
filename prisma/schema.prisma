@@ -1,0 +1,244 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id               String            @id @default(cuid())
+  name             String
+  plan             PlanType          @default(FREE)
+  whatsappMode     WhatsAppMode      @default(DISABLED)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  brands           Brand[]
+  posts            Post[]
+  userTenants      UserTenant[]
+  whatsappSessions WhatsAppSession[]
+
+  @@map("tenants")
+}
+
+model User {
+  id          String       @id @default(cuid())
+  email       String       @unique
+  password    String
+  firstName   String?
+  lastName    String?
+  avatar      String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  userTenants UserTenant[]
+
+  @@map("users")
+}
+
+model UserTenant {
+  id        String   @id @default(cuid())
+  userId    String
+  tenantId  String
+  role      UserRole @default(CLIENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, tenantId])
+  @@map("user_tenants")
+}
+
+model Brand {
+  id                 String              @id @default(cuid())
+  tenantId           String
+  name               String
+  timezone           String              @default("UTC")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  assets             Asset[]
+  brandKit           BrandKit?
+  tenant             Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  channelConnections ChannelConnection[]
+  posts              Post[]
+
+  @@map("brands")
+}
+
+model BrandKit {
+  id        String   @id @default(cuid())
+  brandId   String   @unique
+  colors    Json?
+  fonts     Json?
+  logoUrl   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  brand     Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@map("brand_kits")
+}
+
+model Post {
+  id          String          @id @default(cuid())
+  brandId     String
+  title       String
+  status      PostStatus      @default(DRAFT)
+  publishedAt DateTime?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  tenantId    String
+  content     Json
+  assets      Asset[]
+  analytics   PostAnalytics[]
+  brand       Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  schedule    Schedule?
+
+  @@map("posts")
+}
+
+model Schedule {
+  id        String         @id @default(cuid())
+  postId    String         @unique
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  runAt     DateTime
+  timezone  String         @default("UTC")
+  status    ScheduleStatus @default(PENDING)
+  post      Post           @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("schedules")
+}
+
+model ChannelConnection {
+  id          String      @id @default(cuid())
+  brandId     String
+  channelType ChannelType
+  channelId   String
+  accessToken String?
+  isActive    Boolean     @default(true)
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  brand       Brand       @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  @@unique([brandId, channelType, channelId])
+  @@map("channel_connections")
+}
+
+model WhatsAppSession {
+  id          String               @id @default(cuid())
+  tenantId    String
+  sessionId   String               @unique
+  isActive    Boolean              @default(false)
+  qrCode      String?
+  metadata    Json?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  messageLogs WhatsAppMessageLog[]
+  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_sessions")
+}
+
+model WhatsAppMessageLog {
+  id           String          @id @default(cuid())
+  sessionId    String
+  to           String
+  message      String
+  status       String
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  readAt       DateTime?
+  errorMessage String?
+  metadata     Json?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  session      WhatsAppSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("whatsapp_message_logs")
+}
+
+model Asset {
+  id           String   @id @default(cuid())
+  brandId      String?
+  postId       String?
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  url          String
+  metadata     Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  brand        Brand?   @relation(fields: [brandId], references: [id], onDelete: Cascade)
+  post         Post?    @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("assets")
+}
+
+model PostAnalytics {
+  id          String      @id @default(cuid())
+  postId      String
+  channelType ChannelType
+  impressions Int         @default(0)
+  reach       Int         @default(0)
+  engagement  Int         @default(0)
+  clicks      Int         @default(0)
+  shares      Int         @default(0)
+  comments    Int         @default(0)
+  likes       Int         @default(0)
+  metadata    Json?
+  recordedAt  DateTime    @default(now())
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  post        Post        @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, channelType, recordedAt])
+  @@map("post_analytics")
+}
+
+enum UserRole {
+  OWNER
+  ADMIN
+  STAFF
+  CLIENT
+}
+
+enum PlanType {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum WhatsAppMode {
+  DISABLED
+  BASIC
+  ADVANCED
+}
+
+enum PostStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+  FAILED
+  ARCHIVED
+}
+
+enum ScheduleStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum ChannelType {
+  FACEBOOK
+  INSTAGRAM
+  TWITTER
+  LINKEDIN
+  WHATSAPP
+  TELEGRAM
+}
