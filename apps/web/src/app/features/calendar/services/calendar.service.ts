@@ -1,7 +1,7 @@
-import { Injectable } from '@angular/core';
+import { Injectable, Inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, BehaviorSubject, combineLatest } from 'rxjs';
-import { map, switchMap } from 'rxjs/operators';
+import { BehaviorSubject, Observable, combineLatest } from 'rxjs';
+import { map, switchMap, catchError } from 'rxjs/operators';
 import { ENVIRONMENT } from '../../../core/tokens/environment.token';
 import { inject } from '@angular/core';
 import { 
@@ -101,19 +101,31 @@ export class CalendarService {
         const { startDate, endDate } = this.getDateRange(date, view);
         return this.fetchPostsForDateRange(startDate, endDate);
       }),
-      map((posts: Post[]) => this.convertPostsToEvents(posts))
+      map((posts: Post[]) => {
+        const events = this.convertPostsToEvents(posts);
+        // Update the events$ BehaviorSubject with fresh data
+        this.events$.next(events);
+        return events;
+      })
     );
   }
 
   private fetchPostsForDateRange(startDate: Date, endDate: Date): Observable<Post[]> {
     // For now, fetch all posts and filter client-side
     // In production, you'd add date range parameters to the API
-    return this.http.get<PostsListResponse>(`${this.env.apiBaseUrl}/posts`).pipe(
-      map(response => response.posts.filter(post => {
-        if (!post.schedule) return false;
-        const scheduleDate = new Date(post.schedule.runAt);
-        return scheduleDate >= startDate && scheduleDate <= endDate;
-      }))
+    // Add cache-busting parameter to ensure fresh data
+    const cacheBuster = new Date().getTime();
+    return this.http.get<PostsListResponse>(`${this.env.apiBaseUrl}/posts?_t=${cacheBuster}`).pipe(
+      map(response => {
+        console.log('📋 Fetched posts from API:', response.posts.length);
+        const scheduledPosts = response.posts.filter(post => {
+          if (!post.schedule) return false;
+          const scheduleDate = new Date(post.schedule.runAt);
+          return scheduleDate >= startDate && scheduleDate <= endDate;
+        });
+        console.log('📅 Filtered scheduled posts:', scheduledPosts.length);
+        return scheduledPosts;
+      })
     );
   }
 
@@ -254,16 +266,84 @@ export class CalendarService {
 
   // Drag & Drop Support
   moveEvent(eventId: string, newDate: Date): Observable<any> {
+    console.log('🔍 Looking for event with ID:', eventId);
+    console.log('🔍 Available events:', this.events$.value.map(e => ({ id: e.id, title: e.title })));
+    
     const event = this.events$.value.find(e => e.id === eventId);
     if (!event) {
+      console.error('❌ Event not found:', eventId);
+      console.error('❌ Available event IDs:', this.events$.value.map(e => e.id));
       throw new Error('Event not found');
     }
 
-    // Update the schedule via API
-    return this.http.patch(`${this.env.apiBaseUrl}/schedules/${event.postId}`, {
-      runAt: newDate.toISOString(),
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+    console.log('🔄 Moving event:', {
+      eventId,
+      eventTitle: event.title,
+      postId: event.postId,
+      currentDate: event.start,
+      newDate: newDate
     });
+
+    // First get the schedule for this post to get the schedule ID
+    return this.http.get<any>(`${this.env.apiBaseUrl}/schedules/post/${event.postId}`).pipe(
+      switchMap((schedule: any) => {
+        console.log('📅 Found schedule:', schedule);
+        
+        if (!schedule || !schedule.id) {
+          console.error('❌ Schedule not found for post:', event.postId);
+          throw new Error('Schedule not found for this post');
+        }
+        
+        // Update the schedule with the new date and time
+        // The newDate parameter now contains both date and time information
+        const newDateTime = new Date(newDate);
+        
+        const updateData = {
+          runAt: newDateTime.toISOString(),
+          timezone: schedule.timezone || 'UTC'
+        };
+        
+        console.log('🔄 Updating schedule with:', updateData);
+        console.log('🔄 API URL:', `${this.env.apiBaseUrl}/schedules/${schedule.id}`);
+        
+        return this.http.patch(`${this.env.apiBaseUrl}/schedules/${schedule.id}`, updateData);
+      }),
+      catchError((error: any) => {
+        console.error('❌ Detailed error in moveEvent:', {
+          error: error,
+          message: error.message,
+          status: error.status,
+          statusText: error.statusText,
+          url: error.url,
+          body: error.error
+        });
+        throw error;
+      })
+    );
+  }
+
+  // Week View Generation
+  generateWeekCalendar(date: Date, events: CalendarEvent[]): CalendarWeek {
+    const weekStart = new Date(date);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay()); // Start of week (Sunday)
+    
+    return this.generateWeek(weekStart, date.getMonth(), events);
+  }
+
+  // Day View Generation
+  generateDayCalendar(date: Date, events: CalendarEvent[]): CalendarDay {
+    const dayEvents = events.filter(event => 
+      this.isSameDay(event.start, date)
+    );
+    
+    return {
+      date: new Date(date),
+      isCurrentMonth: true,
+      isToday: this.isSameDay(date, new Date()),
+      isWeekend: date.getDay() === 0 || date.getDay() === 6,
+      events: dayEvents,
+      eventCount: dayEvents.length
+    };
   }
 
   // Utility Methods
@@ -283,12 +363,7 @@ export class CalendarService {
         weekEnd.setDate(weekEnd.getDate() + 6);
         return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
       case 'day':
-        return date.toLocaleDateString('en-US', { 
-          weekday: 'long', 
-          month: 'long', 
-          day: 'numeric', 
-          year: 'numeric' 
-        });
+        return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
       default:
         return date.toLocaleDateString('en-US', options);
     }

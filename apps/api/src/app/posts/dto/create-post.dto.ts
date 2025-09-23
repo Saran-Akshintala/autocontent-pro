@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsUUID, ValidateNested, IsArray, IsEnum, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsUUID, ValidateNested, IsArray, IsEnum, IsOptional, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Platform } from '@autocontent-pro/types';
 
@@ -32,4 +32,8 @@ export class CreatePostDto {
   @ValidateNested()
   @Type(() => PostContentDto)
   content: PostContentDto;
+
+  @IsOptional()
+  @IsBoolean()
+  requiresApproval?: boolean;
 }

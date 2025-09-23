@@ -28,6 +28,63 @@ export enum CampaignStatus {
   FAILED = 'failed',
 }
 
+export enum PostStatus {
+  DRAFT = 'DRAFT',
+  PENDING_APPROVAL = 'PENDING_APPROVAL',
+  SCHEDULED = 'SCHEDULED',
+  PUBLISHED = 'PUBLISHED',
+  FAILED = 'FAILED',
+  PAUSED = 'PAUSED',
+  ARCHIVED = 'ARCHIVED'
+}
+
+export enum Platform {
+  INSTAGRAM = 'INSTAGRAM',
+  LINKEDIN = 'LINKEDIN',
+  TWITTER = 'TWITTER',
+  FACEBOOK = 'FACEBOOK',
+  TIKTOK = 'TIKTOK'
+}
+
+export interface Schedule {
+  id: string;
+  postId: string;
+  runAt: Date;
+  timezone: string;
+  status: 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface Post {
+  id: string;
+  tenantId: string;
+  brandId: string;
+  title: string;
+  content: any;
+  status: PostStatus;
+  createdAt: Date;
+  updatedAt: Date;
+  publishedAt?: Date;
+  schedule?: Schedule;
+  brand?: {
+    id: string;
+    name: string;
+    brandKit?: {
+      logoUrl?: string;
+    };
+  };
+  assets?: any[];
+}
+
+export interface PostsListResponse {
+  posts: Post[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
 export interface WhatsAppMessage {
   id: string;
   campaignId: string;
@@ -80,5 +137,6 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 }
 
 // Export new post and calendar types
-export * from './lib/post.types';
-export * from './lib/calendar.types';
+// Temporarily disabled due to compilation issues
+// export * from './lib/post.types';
+// export * from './lib/calendar.types';

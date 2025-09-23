@@ -8,10 +8,22 @@ import { AuthModule } from './auth/auth.module';
 import { PostsModule } from './posts/posts.module';
 import { SchedulesModule } from './schedules/schedules.module';
 import { BrandsModule } from './brands/brands.module';
+import { QueueModule } from './queue/queue.module';
+import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { ApprovalsModule } from './approvals/approvals.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
-  imports: [PrismaModule, AuthModule, PostsModule, SchedulesModule, BrandsModule],
+  imports: [
+    PrismaModule, 
+    AuthModule, 
+    PostsModule, 
+    SchedulesModule, 
+    BrandsModule,
+    QueueModule,
+    WhatsAppModule,
+    ApprovalsModule
+  ],
   controllers: [AppController],
   providers: [
     AppService,

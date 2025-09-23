@@ -2,13 +2,15 @@ import { Controller, Get } from '@nestjs/common';
 
 import { AppService } from './app.service';
 import { PrismaService } from './prisma/prisma.service';
+import { QueueService } from './queue/queue.service';
 import { Public } from './auth/decorators/public.decorator';
 
 @Controller()
 export class AppController {
   constructor(
     private readonly appService: AppService,
-    private readonly prismaService: PrismaService
+    private readonly prismaService: PrismaService,
+    private readonly queueService: QueueService
   ) {}
 
   @Public()
@@ -20,15 +22,31 @@ export class AppController {
   @Public()
   @Get('health')
   async getHealth() {
-    const dbHealth = await this.prismaService.healthCheck();
-    
-    return {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      database: dbHealth,
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-    };
+    try {
+      const [dbHealth, queueHealth] = await Promise.all([
+        this.prismaService.healthCheck(),
+        this.queueService.getQueueHealth().catch(() => ({ status: 'unavailable', error: 'Queue service not available' }))
+      ]);
+      
+      const overallStatus = dbHealth.status === 'healthy' && queueHealth.status !== 'unavailable' ? 'ok' : 'degraded';
+      
+      return {
+        status: overallStatus,
+        timestamp: new Date().toISOString(),
+        database: dbHealth,
+        queues: queueHealth,
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+      };
+    } catch (error) {
+      return {
+        status: 'error',
+        timestamp: new Date().toISOString(),
+        error: error.message,
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+      };
+    }
   }
 
   @Public()

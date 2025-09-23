@@ -89,8 +89,10 @@ model Post {
   updatedAt   DateTime        @updatedAt
   tenantId    String
   content     Json
+  approvalNotifiedAt DateTime? // When approval notification was sent
   assets      Asset[]
   analytics   PostAnalytics[]
+  approvalLogs ApprovalLog[]
   brand       Brand           @relation(fields: [brandId], references: [id], onDelete: Cascade)
   tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   schedule    Schedule?
@@ -128,16 +130,18 @@ model ChannelConnection {
 }
 
 model WhatsAppSession {
-  id          String               @id @default(cuid())
-  tenantId    String
-  sessionId   String               @unique
-  isActive    Boolean              @default(false)
-  qrCode      String?
-  metadata    Json?
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  messageLogs WhatsAppMessageLog[]
-  tenant      Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  id            String               @id @default(cuid())
+  tenantId      String
+  sessionId     String               @unique
+  isActive      Boolean              @default(false)
+  status        String?              // WhatsApp connection status
+  lastHeartbeat DateTime?            // Last heartbeat timestamp
+  qrCode        String?
+  metadata      Json?
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  messageLogs   WhatsAppMessageLog[]
+  tenant        Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@map("whatsapp_sessions")
 }
@@ -199,6 +203,33 @@ model PostAnalytics {
   @@map("post_analytics")
 }
 
+model ApprovalLog {
+  id        String            @id @default(cuid())
+  postId    String
+  userId    String?           // User who performed the action
+  action    ApprovalAction
+  status    PostStatus        // Status after the action
+  feedback  String?           // Optional feedback/reason
+  metadata  Json?             // Additional context
+  createdAt DateTime          @default(now())
+  post      Post              @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("approval_logs")
+}
+
+enum ApprovalAction {
+  CREATED
+  SUBMITTED_FOR_APPROVAL
+  APPROVED
+  REJECTED
+  CHANGE_REQUESTED
+  RESUBMITTED
+  SCHEDULED
+  PUBLISHED
+  PAUSED
+  ARCHIVED
+}
+
 enum UserRole {
   OWNER
   ADMIN
@@ -221,9 +252,11 @@ enum WhatsAppMode {
 
 enum PostStatus {
   DRAFT
+  PENDING_APPROVAL
   SCHEDULED
   PUBLISHED
   FAILED
+  PAUSED
   ARCHIVED
 }
 

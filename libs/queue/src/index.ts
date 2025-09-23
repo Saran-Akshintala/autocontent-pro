@@ -4,6 +4,98 @@ import { Queue, Worker, Job, QueueOptions, WorkerOptions } from 'bullmq';
 import { Redis } from 'ioredis';
 import { WhatsAppJobData } from '@autocontent-pro/types';
 
+// Queue Names
+export enum QueueNames {
+  CONTENT_GENERATE_MONTHLY = 'content.generate.monthly',
+  CONTENT_REGEN_SINGLE = 'content.regen.single',
+  APPROVAL_NOTIFY = 'approval.notify',
+  PUBLISH_DISPATCH = 'publish.dispatch',
+  ANALYTICS_PULL = 'analytics.pull',
+  IMAGE_GENERATE = 'image.generate',
+  WHATSAPP_MESSAGES = 'whatsapp-messages'
+}
+
+// Typed Job Payloads
+export interface ContentGenerateMonthlyJobData {
+  tenantId: string;
+  brandId: string;
+  month: number;
+  year: number;
+  contentCount: number;
+  platforms: string[];
+  preferences?: {
+    tone?: string;
+    topics?: string[];
+    hashtags?: string[];
+  };
+}
+
+export interface ContentRegenSingleJobData {
+  tenantId: string;
+  postId: string;
+  brandId: string;
+  platform: string;
+  regenerationType: 'hook' | 'body' | 'hashtags' | 'full';
+  preferences?: {
+    tone?: string;
+    style?: string;
+  };
+}
+
+export interface ApprovalNotifyJobData {
+  tenantId: string;
+  postId: string;
+  brandId: string;
+  approverIds: string[];
+  notificationType: 'email' | 'whatsapp' | 'both';
+  dueDate?: Date;
+  message?: string;
+}
+
+export interface PublishDispatchJobData {
+  tenantId: string;
+  postId: string;
+  scheduleId: string;
+  platforms: {
+    platform: string;
+    accountId: string;
+    credentials: Record<string, any>;
+  }[];
+  content: {
+    hook: string;
+    body: string;
+    hashtags: string[];
+    mediaUrls?: string[];
+  };
+  scheduledTime: Date;
+}
+
+export interface AnalyticsPullJobData {
+  tenantId: string;
+  brandId?: string;
+  platforms: string[];
+  dateRange: {
+    startDate: Date;
+    endDate: Date;
+  };
+  metrics: string[];
+  postIds?: string[];
+}
+
+export interface ImageGenerateJobData {
+  tenantId: string;
+  postId?: string;
+  brandId: string;
+  prompt: string;
+  style: 'realistic' | 'cartoon' | 'abstract' | 'minimalist';
+  dimensions: {
+    width: number;
+    height: number;
+  };
+  brandColors?: string[];
+  brandFonts?: string[];
+}
+
 export interface QueueConfig {
   redis: {
     host: string;
@@ -24,7 +116,6 @@ export class QueueManager {
       port: config.redis.port,
       password: config.redis.password,
       db: config.redis.db || 0,
-      retryDelayOnFailover: 100,
       maxRetriesPerRequest: 3,
     });
   }
@@ -84,7 +175,7 @@ export class QueueManager {
       delay?: number;
       priority?: number;
       attempts?: number;
-      backoff?: string | { type: string; delay: number };
+      backoff?: { type: string; delay: number };
     }
   ): Promise<Job<T>> {
     const queue = this.getQueue(queueName);
@@ -111,11 +202,37 @@ export class QueueManager {
     const failed = await queue.getFailed();
 
     return {
+      name: queueName,
       waiting: waiting.length,
       active: active.length,
       completed: completed.length,
       failed: failed.length,
+      total: waiting.length + active.length + completed.length + failed.length,
     };
+  }
+
+  /**
+   * Gets statistics for all registered queues
+   */
+  async getAllQueueStats() {
+    const stats = [];
+    for (const queueName of this.queues.keys()) {
+      const queueStats = await this.getQueueStats(queueName);
+      stats.push(queueStats);
+    }
+    return stats;
+  }
+
+  /**
+   * Clears all jobs from a queue
+   */
+  async clearQueue(queueName: string, status?: 'wait' | 'active' | 'completed' | 'failed') {
+    const queue = this.getQueue(queueName);
+    if (status) {
+      await queue.clean(0, 1000, status);
+    } else {
+      await queue.obliterate({ force: true });
+    }
   }
 
   /**
@@ -137,18 +254,89 @@ export class QueueManager {
   }
 }
 
-// WhatsApp specific queue helpers
-export class WhatsAppQueue {
-  private queueManager: QueueManager;
-  private queueName = 'whatsapp-messages';
+// Specific Queue Producers
+export class ContentQueue {
+  constructor(private queueManager: QueueManager) {}
 
-  constructor(queueManager: QueueManager) {
-    this.queueManager = queueManager;
+  async generateMonthlyContent(data: ContentGenerateMonthlyJobData): Promise<Job<ContentGenerateMonthlyJobData>> {
+    return this.queueManager.addJob(
+      QueueNames.CONTENT_GENERATE_MONTHLY,
+      'generate-monthly-content',
+      data,
+      { priority: 5 }
+    );
   }
 
-  /**
-   * Adds a WhatsApp message to the queue
-   */
+  async regenerateSingleContent(data: ContentRegenSingleJobData): Promise<Job<ContentRegenSingleJobData>> {
+    return this.queueManager.addJob(
+      QueueNames.CONTENT_REGEN_SINGLE,
+      'regenerate-single-content',
+      data,
+      { priority: 8 }
+    );
+  }
+}
+
+export class ApprovalQueue {
+  constructor(private queueManager: QueueManager) {}
+
+  async notifyApprovers(data: ApprovalNotifyJobData): Promise<Job<ApprovalNotifyJobData>> {
+    return this.queueManager.addJob(
+      QueueNames.APPROVAL_NOTIFY,
+      'notify-approvers',
+      data,
+      { priority: 7 }
+    );
+  }
+}
+
+export class PublishQueue {
+  constructor(private queueManager: QueueManager) {}
+
+  async dispatchPost(data: PublishDispatchJobData): Promise<Job<PublishDispatchJobData>> {
+    const delay = data.scheduledTime.getTime() - Date.now();
+    return this.queueManager.addJob(
+      QueueNames.PUBLISH_DISPATCH,
+      'dispatch-post',
+      data,
+      { 
+        delay: Math.max(0, delay),
+        priority: 10 
+      }
+    );
+  }
+}
+
+export class AnalyticsQueue {
+  constructor(private queueManager: QueueManager) {}
+
+  async pullAnalytics(data: AnalyticsPullJobData): Promise<Job<AnalyticsPullJobData>> {
+    return this.queueManager.addJob(
+      QueueNames.ANALYTICS_PULL,
+      'pull-analytics',
+      data,
+      { priority: 3 }
+    );
+  }
+}
+
+export class ImageQueue {
+  constructor(private queueManager: QueueManager) {}
+
+  async generateImage(data: ImageGenerateJobData): Promise<Job<ImageGenerateJobData>> {
+    return this.queueManager.addJob(
+      QueueNames.IMAGE_GENERATE,
+      'generate-image',
+      data,
+      { priority: 6 }
+    );
+  }
+}
+
+// WhatsApp specific queue helpers
+export class WhatsAppQueue {
+  constructor(private queueManager: QueueManager) {}
+
   async sendMessage(
     to: string,
     message: string,
@@ -165,7 +353,7 @@ export class WhatsAppQueue {
     };
 
     return this.queueManager.addJob(
-      this.queueName,
+      QueueNames.WHATSAPP_MESSAGES,
       'send-message',
       jobData,
       {
@@ -175,14 +363,11 @@ export class WhatsAppQueue {
     );
   }
 
-  /**
-   * Creates a worker to process WhatsApp messages
-   */
   createWorker(
     processor: (job: Job<WhatsAppJobData>) => Promise<void>
   ): Worker<WhatsAppJobData> {
     return this.queueManager.createWorker(
-      this.queueName,
+      QueueNames.WHATSAPP_MESSAGES,
       processor,
       {
         concurrency: 3, // Limit concurrency for WhatsApp to avoid rate limits
@@ -190,11 +375,43 @@ export class WhatsAppQueue {
     );
   }
 
-  /**
-   * Gets WhatsApp queue statistics
-   */
   async getStats() {
-    return this.queueManager.getQueueStats(this.queueName);
+    return this.queueManager.getQueueStats(QueueNames.WHATSAPP_MESSAGES);
+  }
+}
+
+// Queue Factory for easy initialization
+export class QueueFactory {
+  private queueManager: QueueManager;
+  
+  public content: ContentQueue;
+  public approval: ApprovalQueue;
+  public publish: PublishQueue;
+  public analytics: AnalyticsQueue;
+  public image: ImageQueue;
+  public whatsapp: WhatsAppQueue;
+
+  constructor(config: QueueConfig) {
+    this.queueManager = new QueueManager(config);
+    
+    this.content = new ContentQueue(this.queueManager);
+    this.approval = new ApprovalQueue(this.queueManager);
+    this.publish = new PublishQueue(this.queueManager);
+    this.analytics = new AnalyticsQueue(this.queueManager);
+    this.image = new ImageQueue(this.queueManager);
+    this.whatsapp = new WhatsAppQueue(this.queueManager);
+  }
+
+  getQueueManager(): QueueManager {
+    return this.queueManager;
+  }
+
+  async getAllStats() {
+    return this.queueManager.getAllQueueStats();
+  }
+
+  async close() {
+    return this.queueManager.close();
   }
 }
 

@@ -69,7 +69,7 @@ import {
             </div>
           </div>
 
-          <div class="calendar-body">
+          <div class="calendar-body" cdkDropListGroup>
             <div class="calendar-week" *ngFor="let week of calendar.weeks; trackBy: trackByWeek">
               <div 
                 class="calendar-day"
@@ -79,7 +79,8 @@ import {
                 [class.weekend]="day.isWeekend"
                 cdkDropList
                 [cdkDropListData]="day.events"
-                (cdkDropListDropped)="onEventDrop($event, day.date)">
+                (cdkDropListDropped)="onEventDrop($event, day.date)"
+                [id]="'day-' + day.date.getTime()">
                 
                 <span class="day-number">{{ day.date.getDate() }}</span>
                 
@@ -109,10 +110,109 @@ import {
         </div>
       </div>
 
-      <!-- Week/Day views placeholder -->
-      <div class="view-placeholder" *ngIf="(currentView$ | async) !== 'month'">
-        <h3>{{ (currentView$ | async) | titlecase }} View</h3>
-        <p>{{ (currentView$ | async) | titlecase }} view implementation coming soon...</p>
+      <!-- Week View -->
+      <div class="calendar-container" *ngIf="(currentView$ | async) === 'week'">
+        <div class="week-view" *ngIf="calendarWeek$ | async as week">
+          <div class="week-header">
+            <div class="time-column"></div>
+            <div class="day-column" *ngFor="let day of week.days; trackBy: trackByDay">
+              <div class="day-label">{{ day.date | date:'EEE' }}</div>
+              <div class="day-number" [class.today]="day.isToday">{{ day.date.getDate() }}</div>
+            </div>
+          </div>
+          
+          <div class="week-body">
+            <div class="time-slots">
+              <div class="time-slot" *ngFor="let hour of getHours()">
+                <span class="time-label">{{ hour }}:00</span>
+              </div>
+            </div>
+            
+            <div class="week-days" cdkDropListGroup>
+              <div 
+                class="week-day-column"
+                *ngFor="let day of week.days; trackBy: trackByDay">
+                
+                <!-- Time slots for each hour -->
+                <div 
+                  class="week-time-slot"
+                  *ngFor="let hour of getHours(); trackBy: trackByHour"
+                  [attr.data-hour]="hour"
+                  [attr.data-date]="day.date.toISOString()"
+                  cdkDropList
+                  [cdkDropListData]="getEventsForHour(day.events, hour)"
+                  (cdkDropListDropped)="onTimeSlotDrop($event, day.date, hour)"
+                  [id]="'week-slot-' + day.date.getTime() + '-' + hour">
+                  
+                  <!-- Events positioned within this time slot -->
+                  <div 
+                    class="week-event"
+                    *ngFor="let event of getEventsForHour(day.events, hour); trackBy: trackByEvent"
+                    [style.background-color]="event.color"
+                    [style.color]="event.textColor"
+                    cdkDrag
+                    [cdkDragData]="event"
+                    [title]="event.title">
+                    
+                    <div class="week-event-content">
+                      <div class="event-title">{{ event.title }}</div>
+                      <div class="event-time">{{ event.start | date:'shortTime' }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Day View -->
+      <div class="calendar-container" *ngIf="(currentView$ | async) === 'day'">
+        <div class="day-view" *ngIf="calendarDay$ | async as day">
+          <div class="day-header">
+            <h3>{{ day.date | date:'fullDate' }}</h3>
+            <p>{{ day.events.length }} event(s) scheduled</p>
+          </div>
+          
+          <div class="day-body">
+            <div class="time-slots">
+              <div class="time-slot" *ngFor="let hour of getHours()">
+                <span class="time-label">{{ hour }}:00</span>
+              </div>
+            </div>
+            
+            <div class="day-events-container" cdkDropListGroup>
+              <!-- Time slots for each hour -->
+              <div 
+                class="day-time-slot"
+                *ngFor="let hour of getHours(); trackBy: trackByHour"
+                [attr.data-hour]="hour"
+                [attr.data-date]="day.date.toISOString()"
+                cdkDropList
+                [cdkDropListData]="getEventsForHour(day.events, hour)"
+                (cdkDropListDropped)="onTimeSlotDrop($event, day.date, hour)"
+                [id]="'day-slot-' + day.date.getTime() + '-' + hour">
+                
+                <!-- Events positioned within this time slot -->
+                <div 
+                  class="day-event"
+                  *ngFor="let event of getEventsForHour(day.events, hour); trackBy: trackByEvent"
+                  [style.background-color]="event.color"
+                  [style.color]="event.textColor"
+                  cdkDrag
+                  [cdkDragData]="event"
+                  [title]="event.title">
+                  
+                  <div class="day-event-content">
+                    <div class="event-title">{{ event.title }}</div>
+                    <div class="event-time">{{ event.start | date:'shortTime' }} - {{ event.end | date:'shortTime' }}</div>
+                    <div class="event-description" *ngIf="event.content && event.content.hook">{{ event.content.hook }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   `,
@@ -293,6 +393,16 @@ import {
       border-bottom: 1px solid #e9ecef;
       position: relative;
       background: white;
+      transition: background-color 0.2s ease;
+    }
+
+    .calendar-day.cdk-drop-list-dragging {
+      background: #f8f9fa;
+    }
+
+    .calendar-day.cdk-drop-list-receiving {
+      background: #e3f2fd;
+      border-color: #3498db;
     }
 
     .calendar-day:nth-child(7n) {
@@ -342,6 +452,13 @@ import {
     .event-item.cdk-drag-dragging {
       cursor: grabbing;
       opacity: 0.8;
+      transform: rotate(5deg);
+      z-index: 1000;
+    }
+
+    .cdk-drag-placeholder {
+      opacity: 0.3;
+      background: #ddd;
     }
 
     .event-content {
@@ -389,6 +506,262 @@ import {
       color: #6c757d;
     }
 
+    /* Week View Styles */
+    .week-view {
+      display: flex;
+      flex-direction: column;
+      height: 600px;
+    }
+
+    .week-header {
+      display: grid;
+      grid-template-columns: 60px repeat(7, 1fr);
+      background: #f8f9fa;
+      border-bottom: 1px solid #e9ecef;
+      padding: 12px 0;
+    }
+
+    .time-column {
+      border-right: 1px solid #e9ecef;
+    }
+
+    .day-column {
+      text-align: center;
+      padding: 8px;
+      border-right: 1px solid #e9ecef;
+    }
+
+    .day-column:last-child {
+      border-right: none;
+    }
+
+    .day-label {
+      font-size: 12px;
+      color: #6c757d;
+      font-weight: 500;
+    }
+
+    .day-number {
+      font-size: 18px;
+      font-weight: 600;
+      color: #2c3e50;
+      margin-top: 4px;
+    }
+
+    .day-number.today {
+      background: #3498db;
+      color: white;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 4px auto 0;
+    }
+
+    .week-body {
+      display: grid;
+      grid-template-columns: 60px 1fr;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .time-slots {
+      border-right: 1px solid #e9ecef;
+      background: #fafafa;
+    }
+
+    .time-slot {
+      height: 60px;
+      border-bottom: 1px solid #e9ecef;
+      display: flex;
+      align-items: flex-start;
+      padding: 4px 8px;
+    }
+
+    .time-label {
+      font-size: 11px;
+      color: #6c757d;
+    }
+
+    .week-days {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      position: relative;
+    }
+
+    .week-day-column {
+      border-right: 1px solid #e9ecef;
+      position: relative;
+      min-height: 1440px; /* 24 hours * 60px */
+      display: flex;
+      flex-direction: column;
+    }
+
+    .week-day-column:last-child {
+      border-right: none;
+    }
+
+    .week-time-slot {
+      height: 60px;
+      border-bottom: 1px solid #f0f0f0;
+      position: relative;
+      min-height: 60px;
+      transition: background-color 0.2s ease;
+    }
+
+    .week-time-slot:hover {
+      background-color: #f8f9fa;
+    }
+
+    .week-time-slot.cdk-drop-list-receiving {
+      background-color: #e3f2fd;
+      border-color: #3498db;
+    }
+
+    .day-events {
+      position: relative;
+      height: 100%;
+    }
+
+    .week-event {
+      background: #3498db;
+      color: white;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 11px;
+      cursor: grab;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+      z-index: 1;
+      margin: 2px;
+      min-height: 24px;
+      display: flex;
+      align-items: center;
+    }
+
+    .week-event:hover {
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+
+    .week-event-content {
+      overflow: hidden;
+    }
+
+    .week-event .event-title {
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .week-event .event-time {
+      font-size: 9px;
+      opacity: 0.9;
+      margin-top: 2px;
+    }
+
+    /* Day View Styles */
+    .day-view {
+      display: flex;
+      flex-direction: column;
+      height: 600px;
+    }
+
+    .day-header {
+      background: #f8f9fa;
+      padding: 20px;
+      border-bottom: 1px solid #e9ecef;
+      text-align: center;
+    }
+
+    .day-header h3 {
+      margin: 0 0 8px 0;
+      color: #2c3e50;
+      font-size: 24px;
+    }
+
+    .day-header p {
+      margin: 0;
+      color: #6c757d;
+      font-size: 14px;
+    }
+
+    .day-body {
+      display: grid;
+      grid-template-columns: 60px 1fr;
+      flex: 1;
+      overflow-y: auto;
+    }
+
+    .day-events-container {
+      position: relative;
+      min-height: 1440px; /* 24 hours * 60px */
+      background: linear-gradient(to bottom, transparent 59px, #e9ecef 59px, #e9ecef 60px, transparent 60px);
+      background-size: 100% 60px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .day-time-slot {
+      height: 60px;
+      border-bottom: 1px solid #f0f0f0;
+      position: relative;
+      min-height: 60px;
+      transition: background-color 0.2s ease;
+      display: flex;
+      align-items: flex-start;
+      padding: 4px 8px;
+    }
+
+    .day-time-slot:hover {
+      background-color: #f8f9fa;
+    }
+
+    .day-time-slot.cdk-drop-list-receiving {
+      background-color: #e3f2fd;
+      border-color: #3498db;
+    }
+
+    .day-event {
+      background: #3498db;
+      color: white;
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 12px;
+      cursor: grab;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      z-index: 1;
+      margin: 4px;
+      min-height: 40px;
+      flex: 1;
+    }
+
+    .day-event:hover {
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .day-event-content {
+      overflow: hidden;
+    }
+
+    .day-event .event-title {
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .day-event .event-time {
+      font-size: 11px;
+      opacity: 0.9;
+      margin-bottom: 4px;
+    }
+
+    .day-event .event-description {
+      font-size: 11px;
+      opacity: 0.8;
+      line-height: 1.3;
+    }
+
     @media (max-width: 768px) {
       .calendar-controls {
         flex-direction: column;
@@ -414,6 +787,26 @@ import {
         min-width: 150px;
         font-size: 16px;
       }
+
+      .week-view, .day-view {
+        height: 400px;
+      }
+
+      .week-header {
+        grid-template-columns: 40px repeat(7, 1fr);
+      }
+
+      .day-body, .week-body {
+        grid-template-columns: 40px 1fr;
+      }
+
+      .time-slot {
+        height: 40px;
+      }
+
+      .week-day-column, .day-events-container {
+        min-height: 960px; /* 24 hours * 40px */
+      }
     }
   `]
 })
@@ -423,6 +816,8 @@ export class CalendarComponent implements OnInit, OnDestroy {
   currentView$!: Observable<CalendarView>;
   currentDate$!: Observable<Date>;
   calendarMonth$!: Observable<CalendarMonth | null>;
+  calendarWeek$!: Observable<CalendarWeek | null>;
+  calendarDay$!: Observable<CalendarDay | null>;
   
   constructor(public calendarService: CalendarService, private postDrawer: PostDrawerService) {}
   
@@ -435,6 +830,24 @@ export class CalendarComponent implements OnInit, OnDestroy {
     ]).pipe(
       map(([date, events]) => {
         return this.calendarService.generateMonthCalendar(date, events);
+      })
+    );
+
+    this.calendarWeek$ = combineLatest([
+      this.currentDate$,
+      this.calendarService.loadCalendarEvents()
+    ]).pipe(
+      map(([date, events]) => {
+        return this.calendarService.generateWeekCalendar(date, events);
+      })
+    );
+
+    this.calendarDay$ = combineLatest([
+      this.currentDate$,
+      this.calendarService.loadCalendarEvents()
+    ]).pipe(
+      map(([date, events]) => {
+        return this.calendarService.generateDayCalendar(date, events);
       })
     );
   }
@@ -461,28 +874,73 @@ export class CalendarComponent implements OnInit, OnDestroy {
   }
   
   onEventDrop(event: CdkDragDrop<CalendarEvent[]>, targetDate: Date): void {
+    console.log('🎯 Drop event triggered:', {
+      previousContainer: event.previousContainer.id,
+      container: event.container.id,
+      previousIndex: event.previousIndex,
+      currentIndex: event.currentIndex,
+      targetDate: targetDate
+    });
+
     if (event.previousContainer === event.container) {
+      // Same container - just reorder
       moveItemInArray(event.container.data, event.previousIndex, event.currentIndex);
+      console.log('📝 Reordered within same container');
     } else {
+      // Different containers - move between dates
       const draggedEvent = event.previousContainer.data[event.previousIndex];
+      console.log('🚀 Moving event between containers:', {
+        eventTitle: draggedEvent.title,
+        eventId: draggedEvent.id,
+        postId: draggedEvent.postId,
+        targetDate: targetDate
+      });
       
       // Move the event to the new date
       this.calendarService.moveEvent(draggedEvent.id, targetDate)
         .pipe(takeUntil(this.destroy$))
         .subscribe({
-          next: () => {
+          next: (response) => {
+            console.log('✅ Successfully moved event via API');
+            
+            // Update the event's date in the local data
+            draggedEvent.start = targetDate;
+            
+            // Transfer the item between arrays
             transferArrayItem(
               event.previousContainer.data,
               event.container.data,
               event.previousIndex,
               event.currentIndex
             );
+            
+            console.log('📅 Updated local data and refreshing calendar');
+            // Refresh the calendar data to reflect the changes
+            this.refreshCalendar();
           },
           error: (error) => {
-            console.error('Failed to move event:', error);
+            console.error('❌ Failed to move event:', error);
+            alert('Failed to reschedule post. Please try again.');
           }
         });
     }
+  }
+
+  private refreshCalendar(): void {
+    console.log('🔄 Refreshing calendar data...');
+    
+    // Simply trigger a reload of calendar events
+    // The observables will automatically update due to the reactive streams
+    this.calendarService.loadCalendarEvents().pipe(
+      takeUntil(this.destroy$)
+    ).subscribe({
+      next: (events) => {
+        console.log('✅ Calendar events reloaded:', events.length, 'events');
+      },
+      error: (error) => {
+        console.error('❌ Failed to refresh calendar:', error);
+      }
+    });
   }
   
   trackByWeek(index: number, week: CalendarWeek): number {
@@ -499,5 +957,97 @@ export class CalendarComponent implements OnInit, OnDestroy {
 
   openNewPost(): void {
     this.postDrawer.openDrawer('create');
+  }
+
+  // Helper methods for Week and Day views
+  getHours(): number[] {
+    return Array.from({ length: 24 }, (_, i) => i);
+  }
+
+  getEventTop(event: CalendarEvent): number {
+    if (!event.start) return 0;
+    const startTime = new Date(event.start);
+    const hours = startTime.getHours();
+    const minutes = startTime.getMinutes();
+    return (hours * 60 + minutes) * (60 / 60); // 60px per hour, 1px per minute
+  }
+
+  getEventHeight(event: CalendarEvent): number {
+    if (!event.start || !event.end) return 30; // Default height
+    const start = new Date(event.start);
+    const end = new Date(event.end);
+    const durationMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
+    return Math.max(30, durationMinutes * (60 / 60)); // Minimum 30px height
+  }
+
+  // Time-based drag and drop helpers
+  trackByHour(index: number, hour: number): number {
+    return hour;
+  }
+
+  getEventsForHour(events: CalendarEvent[], hour: number): CalendarEvent[] {
+    return events.filter(event => {
+      if (!event.start) return false;
+      const eventHour = new Date(event.start).getHours();
+      return eventHour === hour;
+    });
+  }
+
+  onTimeSlotDrop(event: CdkDragDrop<CalendarEvent[]>, targetDate: Date, targetHour: number): void {
+    console.log('🕐 Time slot drop:', {
+      previousContainer: event.previousContainer.id,
+      container: event.container.id,
+      targetDate: targetDate,
+      targetHour: targetHour
+    });
+
+    if (event.previousContainer === event.container) {
+      // Same time slot - just reorder
+      moveItemInArray(event.container.data, event.previousIndex, event.currentIndex);
+      console.log('📝 Reordered within same time slot');
+    } else {
+      // Different time slots - move between times/dates
+      const draggedEvent = event.previousContainer.data[event.previousIndex];
+      
+      // Create new date with the target date and hour
+      const newDateTime = new Date(targetDate);
+      newDateTime.setHours(targetHour, 0, 0, 0); // Set to the beginning of the hour
+      
+      console.log('🚀 Moving event to new time:', {
+        eventTitle: draggedEvent.title,
+        eventId: draggedEvent.id,
+        currentTime: draggedEvent.start,
+        newDateTime: newDateTime
+      });
+      
+      // Move the event to the new date and time
+      this.calendarService.moveEvent(draggedEvent.id, newDateTime)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (response) => {
+            console.log('✅ Successfully moved event to new time via API');
+            
+            // Update the event's date and time in the local data
+            draggedEvent.start = newDateTime;
+            draggedEvent.end = new Date(newDateTime.getTime() + (60 * 60 * 1000)); // 1 hour duration
+            
+            // Transfer the item between arrays
+            transferArrayItem(
+              event.previousContainer.data,
+              event.container.data,
+              event.previousIndex,
+              event.currentIndex
+            );
+            
+            console.log('📅 Updated local data and refreshing calendar');
+            // Refresh the calendar data to reflect the changes
+            this.refreshCalendar();
+          },
+          error: (error) => {
+            console.error('❌ Failed to move event to new time:', error);
+            alert('Failed to reschedule post. Please try again.');
+          }
+        });
+    }
   }
 }

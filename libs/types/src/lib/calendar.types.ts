@@ -13,7 +13,7 @@ export interface CalendarEvent {
   postId: string;
   brandId: string;
   brandName: string;
-  status: 'DRAFT' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED';
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED' | 'PAUSED';
   platforms: string[];
   content?: {
     hook: string;

@@ -1,7 +1,8 @@
-import { IsUUID, IsDateString, IsString, IsOptional, IsEnum } from 'class-validator';
+import { IsUUID, IsDateString, IsString, IsOptional, IsEnum, IsNotEmpty } from 'class-validator';
 
 export class CreateScheduleDto {
-  @IsUUID()
+  @IsString()
+  @IsNotEmpty()
   postId: string;
 
   @IsDateString()

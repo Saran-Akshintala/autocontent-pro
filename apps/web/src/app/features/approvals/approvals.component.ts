@@ -1,5 +1,38 @@
-import { Component } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { Observable, Subject, takeUntil } from 'rxjs';
+import { ENVIRONMENT, Environment } from '../../core/tokens/environment.token';
+
+// Local types
+interface ApprovalPost {
+  id: string;
+  title: string;
+  content: {
+    hook: string;
+    body: string;
+    hashtags: string[];
+    platforms: string[];
+  };
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  brand: {
+    id: string;
+    name: string;
+    logoUrl?: string;
+  };
+  schedule?: {
+    runAt: string;
+    timezone: string;
+    status: string;
+  };
+}
+
+interface ApprovalsResponse {
+  posts: ApprovalPost[];
+  total: number;
+}
 
 @Component({
   selector: 'app-approvals',
@@ -14,82 +47,60 @@ import { CommonModule } from '@angular/common';
 
       <div class="approval-stats">
         <div class="stat-card">
-          <div class="stat-number">3</div>
+          <div class="stat-number">{{ posts.length }}</div>
           <div class="stat-label">Pending Approval</div>
         </div>
         <div class="stat-card">
-          <div class="stat-number">12</div>
+          <div class="stat-number">0</div>
           <div class="stat-label">Approved Today</div>
         </div>
         <div class="stat-card">
-          <div class="stat-number">1</div>
+          <div class="stat-number">0</div>
           <div class="stat-label">Needs Revision</div>
         </div>
       </div>
 
-      <div class="approval-queue">
-        <div class="approval-item">
-          <div class="approval-content">
-            <div class="approval-header">
-              <h4>Holiday Campaign Post</h4>
-              <div class="approval-meta">
-                <span class="platform">📘 Facebook</span>
-                <span class="submitted-by">Submitted by Sarah Johnson</span>
-                <span class="submitted-time">2 hours ago</span>
-              </div>
-            </div>
-            <div class="approval-preview">
-              <p>🎄 Celebrate the holidays with our special offers! Limited time deals on all products. Don't miss out on these amazing discounts...</p>
-            </div>
-            <div class="approval-actions">
-              <button class="btn btn-success">✅ Approve</button>
-              <button class="btn btn-warning">📝 Request Changes</button>
-              <button class="btn btn-danger">❌ Reject</button>
-              <button class="btn btn-outline">👁️ Preview</button>
-            </div>
-          </div>
-        </div>
+      <div class="loading-state" *ngIf="loading">
+        <p>Loading pending approvals...</p>
+      </div>
 
-        <div class="approval-item">
-          <div class="approval-content">
-            <div class="approval-header">
-              <h4>Product Feature Highlight</h4>
-              <div class="approval-meta">
-                <span class="platform">📷 Instagram</span>
-                <span class="submitted-by">Submitted by Mike Chen</span>
-                <span class="submitted-time">4 hours ago</span>
-              </div>
-            </div>
-            <div class="approval-preview">
-              <p>✨ Introducing our latest innovation! This game-changing feature will revolutionize how you work. Swipe to see more details...</p>
-            </div>
-            <div class="approval-actions">
-              <button class="btn btn-success">✅ Approve</button>
-              <button class="btn btn-warning">📝 Request Changes</button>
-              <button class="btn btn-danger">❌ Reject</button>
-              <button class="btn btn-outline">👁️ Preview</button>
-            </div>
-          </div>
-        </div>
+      <div class="empty-state" *ngIf="!loading && posts.length === 0">
+        <p>No posts pending approval. All caught up! 🎉</p>
+      </div>
 
-        <div class="approval-item">
+      <div class="approval-queue" *ngIf="!loading && posts.length > 0">
+        <div class="approval-item" *ngFor="let post of posts; trackBy: trackByPostId">
           <div class="approval-content">
             <div class="approval-header">
-              <h4>Industry Insights Article</h4>
+              <h4>{{ post.title }}</h4>
               <div class="approval-meta">
-                <span class="platform">💼 LinkedIn</span>
-                <span class="submitted-by">Submitted by Alex Rivera</span>
-                <span class="submitted-time">1 day ago</span>
+                <span class="platform" *ngFor="let platform of post.content.platforms; let first = first">
+                  <span *ngIf="!first"> • </span>{{ getPlatformIcon(platform) }} {{ platform }}
+                </span>
+                <span class="submitted-by">Brand: {{ post.brand.name }}</span>
+                <span class="submitted-time">{{ getTimeAgo(post.createdAt) }}</span>
               </div>
             </div>
             <div class="approval-preview">
-              <p>📊 The future of digital marketing: 5 trends that will shape 2024. Based on our latest research and industry analysis...</p>
+              <p><strong>Hook:</strong> {{ post.content.hook }}</p>
+              <p><strong>Body:</strong> {{ post.content.body }}</p>
+              <div class="hashtags" *ngIf="post.content.hashtags.length > 0">
+                <span class="hashtag" *ngFor="let hashtag of post.content.hashtags">#{{ hashtag }}</span>
+              </div>
             </div>
             <div class="approval-actions">
-              <button class="btn btn-success">✅ Approve</button>
-              <button class="btn btn-warning">📝 Request Changes</button>
-              <button class="btn btn-danger">❌ Reject</button>
-              <button class="btn btn-outline">👁️ Preview</button>
+              <button class="btn btn-success" (click)="approvePost(post)" [disabled]="processingPost === post.id">
+                ✅ Approve
+              </button>
+              <button class="btn btn-warning" (click)="requestChange(post)" [disabled]="processingPost === post.id">
+                📝 Request Changes
+              </button>
+              <button class="btn btn-danger" (click)="rejectPost(post)" [disabled]="processingPost === post.id">
+                ❌ Reject
+              </button>
+              <button class="btn btn-outline" (click)="previewPost(post)">
+                👁️ Preview
+              </button>
             </div>
           </div>
         </div>
@@ -258,6 +269,33 @@ import { CommonModule } from '@angular/common';
       color: #495057;
     }
 
+    .hashtags {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .hashtag {
+      background: #e3f2fd;
+      color: #1976d2;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .loading-state, .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #6c757d;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
     @media (max-width: 768px) {
       .approval-stats {
         grid-template-columns: 1fr;
@@ -278,4 +316,166 @@ import { CommonModule } from '@angular/common';
     }
   `]
 })
-export class ApprovalsComponent {}
+export class ApprovalsComponent implements OnInit, OnDestroy {
+  posts: ApprovalPost[] = [];
+  loading = true;
+  processingPost: string | null = null;
+  private destroy$ = new Subject<void>();
+  private readonly env = inject<Environment>(ENVIRONMENT);
+
+  constructor(private http: HttpClient) {}
+
+  ngOnInit(): void {
+    this.loadPendingApprovals();
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
+
+  loadPendingApprovals(): void {
+    this.loading = true;
+    this.http.get<ApprovalsResponse>(`${this.env.apiBaseUrl}/approvals`)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response) => {
+          this.posts = response.posts;
+          this.loading = false;
+        },
+        error: (error) => {
+          console.error('Failed to load pending approvals:', error);
+          this.loading = false;
+        }
+      });
+  }
+
+  approvePost(post: ApprovalPost): void {
+    this.processingPost = post.id;
+    this.http.post(`${this.env.apiBaseUrl}/approvals/${post.id}/approve`, {})
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.processingPost = null;
+          this.loadPendingApprovals(); // Reload list
+          alert(`Post "${post.title}" approved successfully!`);
+        },
+        error: (error) => {
+          console.error('Failed to approve post:', error);
+          this.processingPost = null;
+          alert('Failed to approve post. Please try again.');
+        }
+      });
+  }
+
+  rejectPost(post: ApprovalPost): void {
+    const feedback = prompt('Reason for rejection (optional):');
+    if (feedback === null) return; // User cancelled
+
+    this.processingPost = post.id;
+    this.http.post(`${this.env.apiBaseUrl}/approvals/${post.id}/reject`, { feedback })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.processingPost = null;
+          this.loadPendingApprovals(); // Reload list
+          alert(`Post "${post.title}" rejected successfully!`);
+        },
+        error: (error) => {
+          console.error('Failed to reject post:', error);
+          this.processingPost = null;
+          alert('Failed to reject post. Please try again.');
+        }
+      });
+  }
+
+  requestChange(post: ApprovalPost): void {
+    const feedback = prompt('What changes are needed?');
+    if (!feedback) return; // User cancelled or empty
+
+    this.processingPost = post.id;
+    this.http.post(`${this.env.apiBaseUrl}/approvals/${post.id}/request-change`, { feedback })
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: () => {
+          this.processingPost = null;
+          this.loadPendingApprovals(); // Reload list
+          alert(`Change request sent for "${post.title}"!`);
+        },
+        error: (error) => {
+          console.error('Failed to request change:', error);
+          this.processingPost = null;
+          alert('Failed to request change. Please try again.');
+        }
+      });
+  }
+
+  previewPost(post: ApprovalPost): void {
+    this.http.get(`${this.env.apiBaseUrl}/approvals/${post.id}/preview`)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (preview: any) => {
+          const platforms = preview.content.platforms.join(', ');
+          const hashtags = preview.content.hashtags.map((h: string) => '#' + h).join(' ');
+          const when = preview.schedule ? this.formatDate(preview.schedule.runAt) : 'Not scheduled';
+          
+          alert(
+            `📝 POST PREVIEW\n\n` +
+            `Title: ${preview.title}\n` +
+            `Brand: ${preview.brand.name}\n` +
+            `Platforms: ${platforms}\n` +
+            `When: ${when}\n\n` +
+            `Hook:\n${preview.content.hook}\n\n` +
+            `Body:\n${preview.content.body}\n\n` +
+            `Hashtags: ${hashtags}`
+          );
+        },
+        error: (error) => {
+          console.error('Failed to load preview:', error);
+          alert('Failed to load preview. Please try again.');
+        }
+      });
+  }
+
+  trackByPostId(index: number, post: ApprovalPost): string {
+    return post.id;
+  }
+
+  getPlatformIcon(platform: string): string {
+    switch (platform?.toLowerCase()) {
+      case 'instagram': return '📷';
+      case 'linkedin': return '💼';
+      case 'twitter': return '🐦';
+      case 'facebook': return '📘';
+      case 'tiktok': return '🎵';
+      default: return '📱';
+    }
+  }
+
+  getTimeAgo(dateString: string): string {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffDays > 0) {
+      return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+    } else if (diffHours > 0) {
+      return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    } else {
+      return 'Just now';
+    }
+  }
+
+  formatDate(dateString: string): string {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit'
+    });
+  }
+}

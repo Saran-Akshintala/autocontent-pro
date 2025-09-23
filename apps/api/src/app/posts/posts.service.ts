@@ -5,10 +5,14 @@ import { UpdatePostDto } from './dto/update-post.dto';
 import { PostsQueryDto } from './dto/posts-query.dto';
 import { validatePostContent } from './validators/post-content.validator';
 import { Post, PostsListResponse, PostStatus } from '@autocontent-pro/types';
+import { ApprovalsService } from '../approvals/approvals.service';
 
 @Injectable()
 export class PostsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private approvalsService: ApprovalsService
+  ) {}
 
   async create(tenantId: string, createPostDto: CreatePostDto): Promise<Post> {
     // Validate brand belongs to tenant
@@ -47,12 +51,30 @@ export class PostsService {
               }
             }
           },
-          // schedule: true, // Temporarily disabled due to Prisma relation issues
+          schedule: true,
           assets: true
         }
       });
 
-      return this.mapToPostType(post);
+      // Check if post should go to approval workflow
+      // For now, let's make all new posts require approval
+      if (createPostDto.requiresApproval !== false) {
+        // Update post status to PENDING_APPROVAL
+        await this.prisma.post.update({
+          where: { id: post.id },
+          data: { status: 'PENDING_APPROVAL' }
+        });
+
+        // Send approval notification
+        await this.approvalsService.sendApprovalNotification(tenantId, post.id);
+        
+        console.log(`📋 Post ${post.id} created and sent for approval`);
+      }
+
+      return this.mapToPostType({
+        ...post,
+        status: createPostDto.requiresApproval !== false ? 'PENDING_APPROVAL' : post.status
+      });
     } catch (error) {
       throw new BadRequestException(`Invalid post content: ${error.message}`);
     }
@@ -85,10 +107,9 @@ export class PostsService {
               id: true,
               name: true
             }
-          }
-          // Temporarily disable other relations to isolate the issue
-          // schedule: true, // Temporarily disabled due to Prisma relation issues
-          // assets: true
+          },
+          schedule: true,
+          assets: true
         },
         orderBy: { [sortBy]: sortOrder },
         skip,
@@ -124,7 +145,7 @@ export class PostsService {
             }
           }
         },
-        // schedules: true, // Temporarily disabled due to Prisma relation issues
+        schedule: true,
         assets: true
       }
     });
@@ -180,7 +201,7 @@ export class PostsService {
             }
           }
         },
-        // schedules: true, // Temporarily disabled due to Prisma relation issues
+        schedule: true,
         assets: true
       }
     });
@@ -239,8 +260,16 @@ export class PostsService {
         id: post.brand.id,
         name: post.brand.name
       } : undefined,
-      schedule: null, // Temporarily disabled
-      assets: [] // Temporarily disabled
+      schedule: post.schedule ? {
+        id: post.schedule.id,
+        postId: post.schedule.postId,
+        runAt: post.schedule.runAt,
+        timezone: post.schedule.timezone,
+        status: post.schedule.status,
+        createdAt: post.schedule.createdAt,
+        updatedAt: post.schedule.updatedAt
+      } : null,
+      assets: post.assets || []
     };
   }
 }

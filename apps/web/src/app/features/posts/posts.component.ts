@@ -11,7 +11,7 @@ interface Post {
   tenantId: string;
   title: string;
   brandId: string;
-  status: 'DRAFT' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED';
+  status: 'DRAFT' | 'PENDING_APPROVAL' | 'SCHEDULED' | 'PUBLISHED' | 'FAILED' | 'PAUSED';
   content: {
     hook: string;
     body: string;
@@ -57,8 +57,10 @@ interface PostsResponse {
           <select class="filter-select">
             <option>All Statuses</option>
             <option>Draft</option>
+            <option>Pending Approval</option>
             <option>Scheduled</option>
             <option>Published</option>
+            <option>Paused</option>
             <option>Archived</option>
           </select>
           <select class="filter-select">
@@ -252,6 +254,21 @@ interface PostsResponse {
       color: #f57c00;
     }
 
+    .status-pending_approval {
+      background: #fff3e0;
+      color: #f57c00;
+    }
+
+    .status-paused {
+      background: #f3e5f5;
+      color: #7b1fa2;
+    }
+
+    .status-failed {
+      background: #ffebee;
+      color: #c62828;
+    }
+
     .post-platform {
       font-size: 14px;
       color: #6c757d;
@@ -443,6 +460,9 @@ export class PostsComponent implements OnInit, OnDestroy {
       case 'draft': return 'status-draft';
       case 'published': return 'status-published';
       case 'pending': return 'status-pending';
+      case 'pending_approval': return 'status-pending_approval';
+      case 'paused': return 'status-paused';
+      case 'failed': return 'status-failed';
       default: return 'status-draft';
     }
   }
