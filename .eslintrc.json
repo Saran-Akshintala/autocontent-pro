@@ -1,10 +1,15 @@
 {
   "root": true,
-  "ignorePatterns": ["**/*"],
+  "ignorePatterns": ["node_modules", "dist", "build", "coverage"],
   "plugins": ["@nx"],
   "overrides": [
     {
-      "files": ["*.ts", "*.tsx", "*.js", "*.jsx"],
+      "files": ["*.ts", "*.tsx"],
+      "parser": "@typescript-eslint/parser",
+      "parserOptions": {
+        "ecmaVersion": 2020,
+        "sourceType": "module"
+      },
       "rules": {
         "@nx/enforce-module-boundaries": [
           "error",
@@ -22,13 +27,11 @@
       }
     },
     {
-      "files": ["*.ts", "*.tsx"],
-      "extends": ["@nx/typescript"],
-      "rules": {}
-    },
-    {
       "files": ["*.js", "*.jsx"],
-      "extends": ["@nx/javascript"],
+      "parserOptions": {
+        "ecmaVersion": 2020,
+        "sourceType": "module"
+      },
       "rules": {}
     }
   ]
