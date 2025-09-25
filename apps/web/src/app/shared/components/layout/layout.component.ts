@@ -62,6 +62,12 @@ import { PostDrawerComponent } from '../../../features/posts/components/post-dra
               </a>
             </li>
             <li class="nav-item">
+              <a routerLink="/ai-orchestrator" routerLinkActive="active" class="nav-link">
+                <span class="nav-icon">🤖</span>
+                <span class="nav-text">AI Orchestrator</span>
+              </a>
+            </li>
+            <li class="nav-item">
               <a routerLink="/settings" routerLinkActive="active" class="nav-link">
                 <span class="nav-icon">⚙️</span>
                 <span class="nav-text">Settings</span>
@@ -393,6 +399,7 @@ export class LayoutComponent {
       '/posts': 'Posts',
       '/approvals': 'Approvals',
       '/analytics': 'Analytics',
+      '/ai-orchestrator': 'AI Orchestrator',
       '/settings': 'Settings'
     };
     

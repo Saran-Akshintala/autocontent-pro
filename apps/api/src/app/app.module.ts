@@ -8,9 +8,11 @@ import { AuthModule } from './auth/auth.module';
 import { PostsModule } from './posts/posts.module';
 import { SchedulesModule } from './schedules/schedules.module';
 import { BrandsModule } from './brands/brands.module';
-import { QueueModule } from './queue/queue.module';
-import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ApprovalsModule } from './approvals/approvals.module';
+import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { ContentModule } from './content/content.module';
+import { AIModule } from './ai/ai.module';
+import { QueueModule } from './queue/queue.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 
 @Module({
@@ -22,7 +24,9 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
     BrandsModule,
     QueueModule,
     WhatsAppModule,
-    ApprovalsModule
+    ApprovalsModule,
+    ContentModule,
+    AIModule
   ],
   controllers: [AppController],
   providers: [

@@ -1,10 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PostStatus, UserRole } from '@prisma/client';
+import { WhatsAppClientService } from '../whatsapp/whatsapp-client.service';
 
 @Injectable()
 export class ApprovalsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private whatsAppClientService: WhatsAppClientService
+  ) {}
 
   /**
    * Verify user has access to the specified brand
@@ -277,7 +281,7 @@ export class ApprovalsService {
 
   async sendApprovalNotification(tenantId: string, postId: string) {
     try {
-      // Get the post to get brandId
+      // Get the post details
       const post = await this.prisma.post.findFirst({
         where: { id: postId, tenantId },
       });
@@ -289,36 +293,18 @@ export class ApprovalsService {
 
       console.log(`📧 Sending approval notification for post ${postId}: "${post.title}"`);
 
-      // Send notification directly to WhatsApp worker HTTP endpoint
-      const whatsappWorkerUrl = process.env.WA_WORKER_URL || 'http://localhost:3001';
-      
-      try {
-        const requestBody = {
-          postId,
-          title: post.title,
-          message: `New post "${post.title}" requires approval`,
-        };
-        
-        console.log(`📤 Sending to WhatsApp worker:`, requestBody);
-        
-        const response = await fetch(`${whatsappWorkerUrl}/notify-approval`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-        });
+      // Use the integrated WhatsApp client service
+      const success = await this.whatsAppClientService.sendApprovalNotification(
+        tenantId,
+        postId,
+        post.title,
+        `New post "${post.title}" requires approval`
+      );
 
-        if (response.ok) {
-          console.log(`✅ Approval notification sent to WhatsApp for post ${postId}`);
-        } else {
-          console.error(`❌ Failed to send WhatsApp notification: ${response.status}`);
-        }
-      } catch (fetchError) {
-        console.error('❌ Error calling WhatsApp worker:', fetchError.message);
-        
-        // Queue system fallback disabled for now
-        console.log(`⚠️ Queue system not available, using direct HTTP only`);
+      if (success) {
+        console.log(`✅ Approval notification sent to WhatsApp for post ${postId}`);
+      } else {
+        console.log(`⚠️ No active WhatsApp session found for tenant ${tenantId}`);
       }
     } catch (error) {
       console.error('❌ Error sending approval notification:', error);

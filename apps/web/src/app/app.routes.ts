@@ -39,6 +39,10 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/analytics/analytics.component').then(m => m.AnalyticsComponent)
       },
       {
+        path: 'ai-orchestrator',
+        loadComponent: () => import('./features/ai-orchestrator/ai-orchestrator.component').then(m => m.AiOrchestratorComponent)
+      },
+      {
         path: 'settings',
         loadComponent: () => import('./features/settings/settings.component').then(m => m.SettingsComponent)
       }

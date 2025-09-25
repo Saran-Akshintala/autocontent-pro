@@ -29,14 +29,34 @@ client.on('ready', () => {
 // Message event
 client.on('message', async (message) => {
   console.log(`📩 Received message: ${message.body}`);
+  console.log(`📩 Message type: ${message.type}`);
   
   // Handle both button clicks and text commands
   let command = message.body;
   
   // Check if it's a button response or interactive message
-  if (message.type === 'buttons_response' || message.hasQuotedMsg) {
+  if (message.type === 'buttons_response') {
+    // For button responses, try to get the button ID first, then fall back to body
+    if (message.selectedButtonId) {
+      command = message.selectedButtonId;
+      console.log(`🔘 Button clicked with ID: ${command}`);
+    } else {
+      command = message.body;
+      console.log(`🔘 Button clicked with body: ${command}`);
+    }
+  } else if (message.type === 'interactive') {
+    // Handle interactive message responses
     command = message.body;
+    console.log(`🔄 Interactive message: ${command}`);
+  } else if (message.hasQuotedMsg) {
+    // Handle quoted messages
+    command = message.body;
+    console.log(`💬 Quoted message: ${command}`);
   }
+  
+  // Log the raw message object for debugging
+  console.log(`🔍 Message object keys:`, Object.keys(message));
+  console.log(`🔍 Final command to process: "${command}"`)
   
   // Enhanced approval command handling with API integration
   if (command.toLowerCase().startsWith('approve:')) {
@@ -217,36 +237,30 @@ const server = http.createServer((req, res) => {
               try {
                 // Try to send interactive buttons first, fallback to text
                 try {
-                  // Create interactive buttons message using WhatsApp Web.js format
-                  const buttonsMessage = {
-                    body: `🤖 **AutoContent Pro**\n\n${approvalMessage}\n\n👆 *Use buttons below or reply manually:*`,
-                    buttons: [
-                      {
-                        buttonId: `approve:${postId}`,
-                        buttonText: { displayText: '✅ Approve' },
-                        type: 1
-                      },
-                      {
-                        buttonId: `reject:${postId}`,
-                        buttonText: { displayText: '❌ Reject' },
-                        type: 1
-                      },
-                      {
-                        buttonId: `change:${postId}`,
-                        buttonText: { displayText: '🔄 Request Changes' },
-                        type: 1
-                      }
-                    ],
-                    headerType: 1
-                  };
+                  // Import MessageMedia and Buttons from whatsapp-web.js
+                  const { MessageMedia, Buttons } = require('whatsapp-web.js');
                   
-                  await client.sendMessage(numberFormat, buttonsMessage);
+                  // Create buttons using the correct whatsapp-web.js format with IDs
+                  const button1 = { body: '✅ Approve', id: `approve:${postId}` };
+                  const button2 = { body: '❌ Reject', id: `reject:${postId}` };
+                  const button3 = { body: '🔄 Request Changes', id: `change:${postId}` };
+                  
+                  const buttons = new Buttons(
+                    `🤖 *AutoContent Pro - Approval Required*\n\n${approvalMessage}\n\n👆 *Use buttons below or reply manually:*`,
+                    [button1, button2, button3],
+                    'Approval Actions',
+                    'AutoContent Pro Approval System'
+                  );
+                  
+                  await client.sendMessage(numberFormat, buttons);
                   console.log(`✅ Interactive buttons sent successfully to +91-9003090644`);
                 } catch (buttonError) {
-                  console.log(`⚠️ Interactive buttons failed, sending text fallback: ${buttonError.message}`);
-                  // Fallback to text message
-                  await client.sendMessage(numberFormat, `🤖 **AutoContent Pro**\n\n${approvalMessage}\n\n*Reply with:*\n• \`approve:${postId}\` to approve\n• \`reject:${postId}\` to reject\n• \`change:${postId}:feedback\` to request changes`);
-                  console.log(`✅ Text fallback sent successfully to +91-9003090644`);
+                  console.log(`⚠️ Interactive buttons failed, sending enhanced text fallback: ${buttonError.message}`);
+                  // Enhanced fallback with better formatting and emojis
+                  const textMessage = `🤖 *AutoContent Pro - Approval Required*\n\n${approvalMessage}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n*📱 QUICK ACTIONS:*\n\n✅ Type: \`approve:${postId}\`\n❌ Type: \`reject:${postId}\`\n🔄 Type: \`change:${postId}:your feedback here\`\n━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n💡 *Tip: Copy and paste the commands above*\n\n🔗 Or use the web interface at localhost:4200`;
+                  
+                  await client.sendMessage(numberFormat, textMessage);
+                  console.log(`✅ Enhanced text fallback sent successfully to +91-9003090644`);
                 }
 
                 messageSent = true;

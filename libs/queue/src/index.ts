@@ -18,11 +18,18 @@ export enum QueueNames {
 // Typed Job Payloads
 export interface ContentGenerateMonthlyJobData {
   tenantId: string;
+  userId: string;
   brandId: string;
-  month: number;
-  year: number;
-  contentCount: number;
+  niche: string;
+  persona: string;
+  tone: string;
+  ctaGoals: string[];
   platforms: string[];
+  startDate: Date;
+  // Legacy fields for backward compatibility
+  month?: number;
+  year?: number;
+  contentCount?: number;
   preferences?: {
     tone?: string;
     topics?: string[];

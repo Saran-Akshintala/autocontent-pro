@@ -1,6 +1,9 @@
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
+import { Subject, takeUntil, interval } from 'rxjs';
 import { AuthService } from '../../core/services/auth.service';
+import { ENVIRONMENT, Environment } from '../../core/tokens/environment.token';
 
 @Component({
   selector: 'app-settings',
@@ -77,6 +80,26 @@ import { AuthService } from '../../core/services/auth.service';
             </div>
 
             <div class="platforms-grid">
+              <div class="platform-card">
+                <div class="platform-info">
+                  <span class="platform-icon">💬</span>
+                  <div>
+                    <h4>WhatsApp</h4>
+                    <p class="platform-status" [class.connected]="whatsappStatus?.isConnected" [class.disconnected]="!whatsappStatus?.isConnected">
+                      {{ whatsappStatus?.isConnected ? 'Connected as ' + whatsappStatus.connectedName : 'Not Connected' }}
+                    </p>
+                  </div>
+                </div>
+                <button 
+                  class="btn" 
+                  [class.btn-danger]="whatsappStatus?.isConnected" 
+                  [class.btn-primary]="!whatsappStatus?.isConnected"
+                  [disabled]="whatsappConnecting"
+                  (click)="whatsappStatus?.isConnected ? disconnectWhatsApp() : connectWhatsApp()">
+                  {{ whatsappConnecting ? 'Connecting...' : (whatsappStatus?.isConnected ? 'Disconnect' : 'Connect') }}
+                </button>
+              </div>
+
               <div class="platform-card">
                 <div class="platform-info">
                   <span class="platform-icon">📷</span>
@@ -162,6 +185,53 @@ import { AuthService } from '../../core/services/auth.service';
                   <span class="toggle-slider"></span>
                 </label>
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- WhatsApp QR Code Modal -->
+      <div class="modal-overlay" *ngIf="showQRModal" (click)="closeQRModal()">
+        <div class="modal-content" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h3>📱 Connect WhatsApp</h3>
+            <button class="modal-close" (click)="closeQRModal()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="qr-container" *ngIf="qrCodeData">
+              <div class="qr-instructions">
+                <h4>Scan QR Code with WhatsApp</h4>
+                <ol>
+                  <li>Open WhatsApp on your phone</li>
+                  <li>Go to Settings → Linked Devices</li>
+                  <li>Tap "Link a Device"</li>
+                  <li>Scan the QR code shown on the right</li>
+                </ol>
+                <div class="terminal-note" *ngIf="!isQRCodeImage(qrCodeData)">
+                  <p><strong>📟 Check Terminal:</strong> The QR code is also displayed in your terminal/console window.</p>
+                </div>
+              </div>
+              <div class="qr-code">
+                <div *ngIf="isQRCodeImage(qrCodeData); else qrPlaceholder">
+                  <img [src]="qrCodeData" alt="WhatsApp QR Code" class="qr-image" />
+                </div>
+                <ng-template #qrPlaceholder>
+                  <div class="qr-placeholder">
+                    <div class="qr-icon">📱</div>
+                    <p>QR Code Generated!</p>
+                    <p class="qr-note">Please check your terminal/console to scan the QR code</p>
+                  </div>
+                </ng-template>
+              </div>
+            </div>
+            <div class="loading-state" *ngIf="!qrCodeData && whatsappConnecting">
+              <div class="spinner"></div>
+              <p>Generating QR Code...</p>
+            </div>
+            <div class="success-state" *ngIf="whatsappStatus?.isConnected">
+              <div class="success-icon">✅</div>
+              <h4>WhatsApp Connected Successfully!</h4>
+              <p>Connected as: {{ whatsappStatus.connectedName }}</p>
             </div>
           </div>
         </div>
@@ -485,6 +555,195 @@ import { AuthService } from '../../core/services/auth.service';
       color: #495057;
     }
 
+    .btn-danger {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #c0392b;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    /* Modal Styles */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      max-width: 600px;
+      width: 90%;
+      max-height: 80vh;
+      overflow: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 24px;
+      border-bottom: 1px solid #f8f9fa;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+      color: #2c3e50;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #6c757d;
+      padding: 0;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      transition: background 0.2s ease;
+    }
+
+    .modal-close:hover {
+      background: #f8f9fa;
+    }
+
+    .modal-body {
+      padding: 24px;
+    }
+
+    .qr-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      align-items: start;
+    }
+
+    .qr-instructions h4 {
+      margin: 0 0 16px 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #2c3e50;
+    }
+
+    .qr-instructions ol {
+      margin: 0;
+      padding-left: 20px;
+      color: #6c757d;
+      line-height: 1.6;
+    }
+
+    .qr-instructions li {
+      margin-bottom: 8px;
+    }
+
+    .qr-code {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .qr-code img, .qr-image {
+      max-width: 200px;
+      height: auto;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .terminal-note {
+      margin-top: 16px;
+      padding: 12px;
+      background: #fff3cd;
+      border: 1px solid #ffeaa7;
+      border-radius: 6px;
+    }
+
+    .terminal-note p {
+      margin: 0;
+      font-size: 14px;
+      color: #856404;
+    }
+
+    .qr-placeholder {
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .qr-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .qr-placeholder p {
+      margin: 8px 0;
+      color: #6c757d;
+    }
+
+    .qr-note {
+      font-size: 12px !important;
+      color: #856404 !important;
+    }
+
+    .loading-state, .success-state {
+      text-align: center;
+      padding: 40px 20px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #3498db;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .success-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .success-state h4 {
+      margin: 0 0 8px 0;
+      font-size: 18px;
+      font-weight: 600;
+      color: #27ae60;
+    }
+
+    .success-state p {
+      margin: 0;
+      color: #6c757d;
+    }
+
     @media (max-width: 768px) {
       .settings-content {
         grid-template-columns: 1fr;
@@ -532,13 +791,160 @@ import { AuthService } from '../../core/services/auth.service';
         align-items: stretch;
         text-align: center;
       }
+
+      .qr-container {
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+
+      .modal-content {
+        width: 95%;
+        margin: 20px;
+      }
     }
   `]
 })
-export class SettingsComponent {
+export class SettingsComponent implements OnInit, OnDestroy {
   public readonly authService = inject(AuthService);
+  private readonly http = inject(HttpClient);
+  private readonly env = inject<Environment>(ENVIRONMENT);
+  private destroy$ = new Subject<void>();
+
+  // WhatsApp connection state
+  whatsappStatus: any = null;
+  whatsappConnecting = false;
+  showQRModal = false;
+  qrCodeData: string | null = null;
+  currentSessionId: string | null = null;
+
+  ngOnInit(): void {
+    this.loadWhatsAppStatus();
+    
+    // Poll for status updates every 5 seconds
+    interval(5000)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe(() => {
+        if (this.whatsappConnecting || this.showQRModal) {
+          this.loadWhatsAppStatus();
+        }
+      });
+  }
+
+  ngOnDestroy(): void {
+    this.destroy$.next();
+    this.destroy$.complete();
+  }
 
   getCurrentUser() {
     return this.authService.currentUser;
+  }
+
+  async loadWhatsAppStatus(): Promise<void> {
+    try {
+      const response = await this.http.get<any>(`${this.env.apiBaseUrl}/wa/status`)
+        .pipe(takeUntil(this.destroy$))
+        .toPromise();
+
+      if (response && response.sessions && response.sessions.length > 0) {
+        const activeSession = response.sessions.find((s: any) => s.isReady);
+        this.whatsappStatus = {
+          isConnected: !!activeSession,
+          connectedName: activeSession?.connectedName || 'Unknown',
+          connectedNumber: activeSession?.connectedNumber,
+          sessionId: activeSession?.id
+        };
+        this.currentSessionId = activeSession?.id || null;
+
+        // If we were connecting and now connected, close modal
+        if (this.whatsappConnecting && this.whatsappStatus.isConnected) {
+          this.whatsappConnecting = false;
+          setTimeout(() => this.closeQRModal(), 2000); // Show success for 2 seconds
+        }
+      } else {
+        this.whatsappStatus = { isConnected: false };
+        this.currentSessionId = null;
+      }
+    } catch (error) {
+      console.error('Error loading WhatsApp status:', error);
+      this.whatsappStatus = { isConnected: false };
+    }
+  }
+
+  async connectWhatsApp(): Promise<void> {
+    try {
+      this.whatsappConnecting = true;
+      this.showQRModal = true;
+      this.qrCodeData = null;
+
+      const response = await this.http.post<any>(`${this.env.apiBaseUrl}/wa/connect`, {})
+        .pipe(takeUntil(this.destroy$))
+        .toPromise();
+
+      if (response?.sessionId) {
+        this.currentSessionId = response.sessionId;
+        this.pollForQRCode();
+      }
+    } catch (error) {
+      console.error('Error connecting WhatsApp:', error);
+      this.whatsappConnecting = false;
+      this.showQRModal = false;
+      alert('Failed to connect WhatsApp. Please try again.');
+    }
+  }
+
+  async pollForQRCode(): Promise<void> {
+    if (!this.currentSessionId) return;
+
+    try {
+      const response = await this.http.get<any>(`${this.env.apiBaseUrl}/wa/session/${this.currentSessionId}`)
+        .pipe(takeUntil(this.destroy$))
+        .toPromise();
+
+      if (response?.qrCode) {
+        // QR code can be either a data URL (image) or string
+        this.qrCodeData = response.qrCode;
+      } else if (response?.isReady) {
+        // Connection successful
+        this.whatsappConnecting = false;
+        this.loadWhatsAppStatus();
+      } else if (this.whatsappConnecting) {
+        // Keep polling
+        setTimeout(() => this.pollForQRCode(), 2000);
+      }
+    } catch (error) {
+      console.error('Error polling for QR code:', error);
+      if (this.whatsappConnecting) {
+        setTimeout(() => this.pollForQRCode(), 2000);
+      }
+    }
+  }
+
+  async disconnectWhatsApp(): Promise<void> {
+    if (!this.currentSessionId) return;
+
+    try {
+      await this.http.post(`${this.env.apiBaseUrl}/wa/disconnect/${this.currentSessionId}`, {})
+        .pipe(takeUntil(this.destroy$))
+        .toPromise();
+
+      this.whatsappStatus = { isConnected: false };
+      this.currentSessionId = null;
+      alert('WhatsApp disconnected successfully');
+    } catch (error) {
+      console.error('Error disconnecting WhatsApp:', error);
+      alert('Failed to disconnect WhatsApp. Please try again.');
+    }
+  }
+
+  closeQRModal(): void {
+    this.showQRModal = false;
+    this.qrCodeData = null;
+    if (this.whatsappConnecting && !this.whatsappStatus?.isConnected) {
+      this.whatsappConnecting = false;
+    }
+  }
+
+  isQRCodeImage(qrCode: string | null): boolean {
+    return qrCode ? qrCode.startsWith('data:image/') : false;
   }
 }

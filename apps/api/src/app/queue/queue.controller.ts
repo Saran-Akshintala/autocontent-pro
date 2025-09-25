@@ -13,7 +13,7 @@ import { QueueService } from './queue.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { QueueNames } from '@autocontent-pro/queue';
+import { QueueNames, ContentGenerateMonthlyJobData } from '@autocontent-pro/queue';
 
 @Controller('queue')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -43,14 +43,22 @@ export class QueueController {
   @Roles('OWNER', 'ADMIN')
   async testGenerateMonthlyContent(@Request() req: any, @Body() body: any) {
     const tenantId = req.tenantId;
-    const testData = {
+    const userId = req.user?.id || 'test-user';
+
+    const testData: ContentGenerateMonthlyJobData = {
       tenantId,
+      userId,
       brandId: body.brandId || 'test-brand',
-      month: body.month || new Date().getMonth() + 1,
-      year: body.year || new Date().getFullYear(),
-      contentCount: body.contentCount || 10,
-      platforms: body.platforms || ['instagram', 'facebook'],
-      preferences: body.preferences || { tone: 'professional' },
+      niche: body.niche || 'general marketing',
+      persona: body.persona || 'small business owners',
+      tone: body.tone || 'professional',
+      ctaGoals: body.ctaGoals || ['book demo', 'download guide'],
+      platforms: body.platforms || ['INSTAGRAM', 'LINKEDIN'],
+      startDate: body.startDate ? new Date(body.startDate) : new Date(),
+      preferences: body.preferences,
+      month: body.month,
+      year: body.year,
+      contentCount: body.contentCount,
     };
 
     const job = await this.queueService.generateMonthlyContent(testData);

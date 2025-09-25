@@ -1,35 +1,71 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Redis } from 'ioredis';
 import { SessionHeartbeatDto, ApprovalActionDto } from './whatsapp.controller';
 
 @Injectable()
 export class WhatsAppService {
-  private redis: Redis;
+  private readonly logger = new Logger(WhatsAppService.name);
+  private redis: Redis | null = null;
 
   constructor(private prisma: PrismaService) {
-    this.redis = new Redis({
-      host: process.env.REDIS_HOST || 'localhost',
-      port: parseInt(process.env.REDIS_PORT || '6379'),
-      password: process.env.REDIS_PASSWORD,
-      db: parseInt(process.env.REDIS_DB || '0'),
-    });
+    const redisEnabled = (process.env.ENABLE_REDIS || '').toLowerCase() === 'true';
+
+    if (redisEnabled) {
+      try {
+        this.redis = new Redis({
+          host: process.env.REDIS_HOST || 'localhost',
+          port: parseInt(process.env.REDIS_PORT || '6379', 10),
+          password: process.env.REDIS_PASSWORD,
+          db: parseInt(process.env.REDIS_DB || '0', 10),
+          maxRetriesPerRequest: 1,
+          lazyConnect: true,
+          retryStrategy: () => null,
+        });
+
+        this.redis.on('error', (error) => {
+          this.logger.warn(`Redis connection error (optional service): ${error.message}`);
+          if (this.redis) {
+            this.redis.disconnect();
+            this.redis = null;
+          }
+        });
+
+        this.redis.connect().catch((error) => {
+          this.logger.warn(`Redis connection failed (optional service): ${error.message}`);
+          if (this.redis) {
+            this.redis.disconnect();
+            this.redis = null;
+          }
+        });
+      } catch (error) {
+        this.logger.warn('Redis initialization failed (optional service):', error);
+        this.redis = null;
+      }
+    } else {
+      if (process.env.REDIS_HOST) {
+        this.logger.log('Redis host detected but ENABLE_REDIS is not true. Skipping Redis initialization.');
+      }
+      this.logger.log('Redis disabled - using integrated WhatsApp client service');
+    }
   }
 
   async updateSessionHeartbeat(heartbeatDto: SessionHeartbeatDto) {
     try {
-      // Store heartbeat in Redis
+      // Store heartbeat in Redis if available
       const heartbeatData = {
         ...heartbeatDto,
         timestamp: new Date().toISOString(),
         lastUpdated: Date.now(),
       };
 
-      await this.redis.setex(
-        `wa:heartbeat:${heartbeatDto.sessionId}`,
-        300, // 5 minutes TTL
-        JSON.stringify(heartbeatData)
-      );
+      if (this.redis) {
+        await this.redis.setex(
+          `wa:heartbeat:${heartbeatDto.sessionId}`,
+          300, // 5 minutes TTL
+          JSON.stringify(heartbeatData)
+        );
+      }
 
       // Update WhatsApp session in database if it exists
       const existingSession = await this.prisma.whatsAppSession.findFirst({
@@ -73,8 +109,11 @@ export class WhatsAppService {
 
   async getSessionStatus(sessionId: string) {
     try {
-      // Get from Redis first (most recent)
-      const redisData = await this.redis.get(`wa:heartbeat:${sessionId}`);
+      // Get from Redis first (most recent) if available
+      let redisData = null;
+      if (this.redis) {
+        redisData = await this.redis.get(`wa:heartbeat:${sessionId}`);
+      }
       
       // Get from database
       const dbSession = await this.prisma.whatsAppSession.findFirst({
@@ -103,7 +142,10 @@ export class WhatsAppService {
 
       const sessionsWithStatus = await Promise.all(
         dbSessions.map(async (session) => {
-          const redisData = await this.redis.get(`wa:heartbeat:${session.sessionId}`);
+          let redisData = null;
+          if (this.redis) {
+            redisData = await this.redis.get(`wa:heartbeat:${session.sessionId}`);
+          }
           const redisHeartbeat = redisData ? JSON.parse(redisData) : null;
           
           return {
@@ -127,16 +169,22 @@ export class WhatsAppService {
 
   async restartSession(sessionId: string) {
     try {
-      // Send restart command via Redis pub/sub
-      await this.redis.publish(`wa:command:${sessionId}`, JSON.stringify({
-        command: 'restart',
-        timestamp: new Date().toISOString(),
-      }));
-
-      return {
-        success: true,
-        message: `Restart command sent to session ${sessionId}`,
-      };
+      // Send restart command via Redis pub/sub if available
+      if (this.redis) {
+        await this.redis.publish(`wa:command:${sessionId}`, JSON.stringify({
+          command: 'restart',
+          timestamp: new Date().toISOString(),
+        }));
+        return {
+          success: true,
+          message: `Restart command sent to session ${sessionId}`,
+        };
+      } else {
+        return {
+          success: false,
+          message: 'Redis not available - using integrated WhatsApp service instead',
+        };
+      }
     } catch (error) {
       console.error('❌ Error restarting session:', error);
       throw error;
@@ -199,8 +247,8 @@ export class WhatsAppService {
         },
       });
 
-      // Store the change request guidance
-      if (guidance) {
+      // Store the change request guidance if Redis is available
+      if (guidance && this.redis) {
         await this.redis.setex(
           `wa:change-request:${postId}`,
           86400, // 24 hours
@@ -306,6 +354,8 @@ export class WhatsAppService {
   }
 
   async onModuleDestroy() {
-    await this.redis.quit();
+    if (this.redis) {
+      await this.redis.quit();
+    }
   }
 }

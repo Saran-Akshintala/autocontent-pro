@@ -10,10 +10,12 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { WhatsAppService } from './whatsapp.service';
+import { WhatsAppClientService } from './whatsapp-client.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Public } from '../auth/decorators/public.decorator';
+import { TenantId } from '../auth/decorators/tenant-id.decorator';
 
 export interface SessionHeartbeatDto {
   sessionId: string;
@@ -39,7 +41,10 @@ export interface ApprovalActionDto {
 
 @Controller('wa')
 export class WhatsAppController {
-  constructor(private readonly whatsAppService: WhatsAppService) {}
+  constructor(
+    private readonly whatsAppService: WhatsAppService,
+    private readonly whatsAppClientService: WhatsAppClientService
+  ) {}
 
   @Public()
   @Post('sessions/heartbeat')
@@ -96,5 +101,39 @@ export class WhatsAppController {
   @Get('posts/:postId/preview')
   async getPostPreview(@Param('postId') postId: string) {
     return this.whatsAppService.getPostPreview(postId);
+  }
+
+  // New integrated WhatsApp client endpoints
+  @Post('connect')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'ADMIN', 'STAFF')
+  async connectWhatsApp(
+    @TenantId() tenantId: string,
+    @Request() req: any
+  ) {
+    const userId = req.user.id;
+    return this.whatsAppClientService.createSession(tenantId, userId);
+  }
+
+  @Get('status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'ADMIN', 'STAFF', 'CLIENT')
+  async getWhatsAppStatus(@TenantId() tenantId: string) {
+    return this.whatsAppClientService.getAllSessions(tenantId);
+  }
+
+  @Get('session/:sessionId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'ADMIN', 'STAFF', 'CLIENT')
+  async getSessionDetails(@Param('sessionId') sessionId: string) {
+    return this.whatsAppClientService.getSessionStatus(sessionId);
+  }
+
+  @Post('disconnect/:sessionId')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('OWNER', 'ADMIN')
+  async disconnectWhatsApp(@Param('sessionId') sessionId: string) {
+    const success = await this.whatsAppClientService.disconnectSession(sessionId);
+    return { success, message: success ? 'Session disconnected' : 'Session not found' };
   }
 }

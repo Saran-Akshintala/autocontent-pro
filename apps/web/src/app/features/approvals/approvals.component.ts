@@ -352,7 +352,10 @@ export class ApprovalsComponent implements OnInit, OnDestroy {
 
   approvePost(post: ApprovalPost): void {
     this.processingPost = post.id;
-    this.http.post(`${this.env.apiBaseUrl}/approvals/${post.id}/approve`, {})
+    this.http.post(`${this.env.apiBaseUrl}/approvals/approve`, {
+      postId: post.id,
+      brandId: post.brand.id
+    })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
@@ -373,7 +376,10 @@ export class ApprovalsComponent implements OnInit, OnDestroy {
     if (feedback === null) return; // User cancelled
 
     this.processingPost = post.id;
-    this.http.post(`${this.env.apiBaseUrl}/approvals/${post.id}/reject`, { feedback })
+    this.http.post(`${this.env.apiBaseUrl}/approvals/reject/${post.id}`, { 
+      feedback,
+      brandId: post.brand.id
+    })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
@@ -394,7 +400,11 @@ export class ApprovalsComponent implements OnInit, OnDestroy {
     if (!feedback) return; // User cancelled or empty
 
     this.processingPost = post.id;
-    this.http.post(`${this.env.apiBaseUrl}/approvals/${post.id}/request-change`, { feedback })
+    this.http.post(`${this.env.apiBaseUrl}/approvals/request-change`, { 
+      postId: post.id,
+      brandId: post.brand.id,
+      feedback 
+    })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
@@ -411,7 +421,7 @@ export class ApprovalsComponent implements OnInit, OnDestroy {
   }
 
   previewPost(post: ApprovalPost): void {
-    this.http.get(`${this.env.apiBaseUrl}/approvals/${post.id}/preview`)
+    this.http.get(`${this.env.apiBaseUrl}/approvals/preview/${post.id}`)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (preview: any) => {

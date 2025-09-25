@@ -25,10 +25,11 @@ export class AppController {
     try {
       const [dbHealth, queueHealth] = await Promise.all([
         this.prismaService.healthCheck(),
-        this.queueService.getQueueHealth().catch(() => ({ status: 'unavailable', error: 'Queue service not available' }))
+        this.queueService.getQueueHealth().catch(() => ({ status: 'unavailable', message: 'Queue service not available' }))
       ]);
       
-      const overallStatus = dbHealth.status === 'healthy' && queueHealth.status !== 'unavailable' ? 'ok' : 'degraded';
+      // Consider system healthy if database is healthy, queue unavailable is acceptable
+      const overallStatus = dbHealth.status === 'healthy' ? 'ok' : 'degraded';
       
       return {
         status: overallStatus,

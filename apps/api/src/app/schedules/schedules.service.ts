@@ -49,11 +49,13 @@ export class SchedulesService {
       }
     });
 
-    // Update post status to SCHEDULED
+    // Update post status to PENDING_APPROVAL for scheduled posts
     await this.prisma.post.update({
       where: { id: createScheduleDto.postId },
-      data: { status: 'SCHEDULED' }
+      data: { status: 'PENDING_APPROVAL' }
     });
+
+    console.log(`📋 Scheduled post ${createScheduleDto.postId} requires approval`);
 
     return this.mapToScheduleType(schedule);
   }

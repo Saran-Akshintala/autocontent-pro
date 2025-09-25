@@ -16,17 +16,31 @@ import { CreateScheduleDto, UpdateScheduleDto } from './dto/create-schedule.dto'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { ApprovalsService } from '../approvals/approvals.service';
 
 @Controller('schedules')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class SchedulesController {
-  constructor(private readonly schedulesService: SchedulesService) {}
+  constructor(
+    private readonly schedulesService: SchedulesService,
+    private readonly approvalsService: ApprovalsService
+  ) {}
 
   @Post()
   @Roles('OWNER', 'ADMIN', 'STAFF')
-  create(@Request() req: any, @Body(ValidationPipe) createScheduleDto: CreateScheduleDto) {
+  async create(@Request() req: any, @Body(ValidationPipe) createScheduleDto: CreateScheduleDto) {
     const tenantId = req.tenantId;
-    return this.schedulesService.create(tenantId, createScheduleDto);
+    const schedule = await this.schedulesService.create(tenantId, createScheduleDto);
+    
+    // Send approval notification for scheduled post
+    try {
+      await this.approvalsService.sendApprovalNotification(tenantId, createScheduleDto.postId);
+      console.log(`📋 Approval notification sent for scheduled post ${createScheduleDto.postId}`);
+    } catch (error) {
+      console.log('⚠️ Could not send approval notification for scheduled post:', error.message);
+    }
+    
+    return schedule;
   }
 
   @Get()
