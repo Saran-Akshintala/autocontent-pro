@@ -35,16 +35,29 @@ export const appRoutes: Route[] = [
         loadComponent: () => import('./features/approvals/approvals.component').then(m => m.ApprovalsComponent)
       },
       {
-        path: 'analytics',
-        loadComponent: () => import('./features/analytics/analytics.component').then(m => m.AnalyticsComponent)
-      },
-      {
         path: 'ai-orchestrator',
         loadComponent: () => import('./features/ai-orchestrator/ai-orchestrator.component').then(m => m.AiOrchestratorComponent)
       },
       {
         path: 'settings',
         loadComponent: () => import('./features/settings/settings.component').then(m => m.SettingsComponent)
+      },
+      // Redirect old routes to Settings tabs
+      {
+        path: 'analytics',
+        redirectTo: '/settings?tab=analytics'
+      },
+      {
+        path: 'billing',
+        redirectTo: '/settings?tab=billing'
+      },
+      {
+        path: 'affiliate',
+        redirectTo: '/settings?tab=affiliate'
+      },
+      {
+        path: 'admin',
+        redirectTo: '/settings?tab=admin'
       }
     ]
   },

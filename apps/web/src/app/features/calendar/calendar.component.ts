@@ -1,10 +1,13 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpClient } from '@angular/common/http';
 import { DragDropModule, CdkDragDrop, moveItemInArray, transferArrayItem } from '@angular/cdk/drag-drop';
 import { Observable, Subject, combineLatest } from 'rxjs';
 import { takeUntil, map } from 'rxjs/operators';
 import { CalendarService } from './services/calendar.service';
 import { PostDrawerService } from '../posts/services/post-drawer.service';
+import { PostDrawerComponent } from '../posts/components/post-drawer/post-drawer.component';
+import { ENVIRONMENT, Environment } from '../../core/tokens/environment.token';
 import { 
   CalendarView, 
   CalendarEvent, 
@@ -16,7 +19,7 @@ import {
 @Component({
   selector: 'app-calendar',
   standalone: true,
-  imports: [CommonModule, DragDropModule],
+  imports: [CommonModule, DragDropModule, PostDrawerComponent],
   template: `
     <div class="calendar-page">
       <div class="page-header">
@@ -80,6 +83,7 @@ import {
                 cdkDropList
                 [cdkDropListData]="day.events"
                 (cdkDropListDropped)="onEventDrop($event, day.date)"
+                (click)="onEmptyDayClick(day.date, $event)"
                 [id]="'day-' + day.date.getTime()">
                 
                 <span class="day-number">{{ day.date.getDate() }}</span>
@@ -92,7 +96,9 @@ import {
                     [style.color]="event.textColor"
                     cdkDrag
                     [cdkDragData]="event"
-                    [title]="event.title">
+                    [title]="event.title"
+                    (click)="onEventClick(event)"
+                    (dblclick)="onEventDoubleClick(event)">
                     
                     <div class="event-content">
                       <span class="event-title">{{ event.title }}</span>
@@ -142,6 +148,7 @@ import {
                   cdkDropList
                   [cdkDropListData]="getEventsForHour(day.events, hour)"
                   (cdkDropListDropped)="onTimeSlotDrop($event, day.date, hour)"
+                  (click)="onEmptyTimeSlotClick(day.date, hour, $event)"
                   [id]="'week-slot-' + day.date.getTime() + '-' + hour">
                   
                   <!-- Events positioned within this time slot -->
@@ -152,7 +159,9 @@ import {
                     [style.color]="event.textColor"
                     cdkDrag
                     [cdkDragData]="event"
-                    [title]="event.title">
+                    [title]="event.title"
+                    (click)="onEventClick(event)"
+                    (dblclick)="onEventDoubleClick(event)">
                     
                     <div class="week-event-content">
                       <div class="event-title">{{ event.title }}</div>
@@ -191,6 +200,7 @@ import {
                 cdkDropList
                 [cdkDropListData]="getEventsForHour(day.events, hour)"
                 (cdkDropListDropped)="onTimeSlotDrop($event, day.date, hour)"
+                (click)="onEmptyTimeSlotClick(day.date, hour, $event)"
                 [id]="'day-slot-' + day.date.getTime() + '-' + hour">
                 
                 <!-- Events positioned within this time slot -->
@@ -201,7 +211,9 @@ import {
                   [style.color]="event.textColor"
                   cdkDrag
                   [cdkDragData]="event"
-                  [title]="event.title">
+                  [title]="event.title"
+                  (click)="onEventClick(event)"
+                  (dblclick)="onEventDoubleClick(event)">
                   
                   <div class="day-event-content">
                     <div class="event-title">{{ event.title }}</div>
@@ -215,6 +227,9 @@ import {
         </div>
       </div>
     </div>
+    
+    <!-- Post Drawer Component -->
+    <app-post-drawer></app-post-drawer>
   `,
   styles: [`
     .calendar-page {
@@ -379,21 +394,33 @@ import {
     .calendar-body {
       display: flex;
       flex-direction: column;
+      min-width: 1050px;
+      width: 100%;
+      overflow-x: auto;
     }
 
     .calendar-week {
       display: grid;
-      grid-template-columns: repeat(7, 1fr);
+      grid-template-columns: repeat(7, minmax(150px, 1fr));
+      width: 100%;
+      min-width: 1050px;
     }
 
     .calendar-day {
-      min-height: 120px;
-      padding: 8px;
-      border-right: 1px solid #e9ecef;
-      border-bottom: 1px solid #e9ecef;
-      position: relative;
+      min-height: 140px;
+      max-height: 140px;
+      min-width: 150px;
+      width: 100%;
+      border: 1px solid #e9ecef;
       background: white;
+      padding: 6px;
+      position: relative;
+      cursor: pointer;
       transition: background-color 0.2s ease;
+      overflow: hidden;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
     }
 
     .calendar-day.cdk-drop-list-dragging {
@@ -428,25 +455,62 @@ import {
       color: #495057;
     }
 
-    .events-container {
-      margin-top: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-
     .event-item {
-      padding: 4px 8px;
+      padding: 8px 6px;
       border-radius: 4px;
-      font-size: 12px;
-      cursor: grab;
+      font-size: 11px;
+      cursor: pointer;
       transition: all 0.2s ease;
-      border-left: 3px solid rgba(0, 0, 0, 0.2);
+      border-left: 3px solid rgba(255, 255, 255, 0.3);
+      width: calc(100% - 2px);
+      min-width: 120px;
+      overflow: visible;
+      min-height: 36px;
+      height: auto;
+      display: block;
+      margin-bottom: 1px;
+      background-color: #3498db;
+      color: white;
+      line-height: 1.4;
+      word-wrap: break-word;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-sizing: border-box;
     }
 
     .event-item:hover {
       transform: translateY(-1px);
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      opacity: 0.9;
+    }
+
+    .day-event {
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      cursor: pointer;
+      margin-bottom: 2px;
+      min-height: 30px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      white-space: nowrap;
+      overflow: hidden;
+      transition: all 0.2s ease;
+      background-color: #3498db;
+      color: white;
+    }
+
+    .day-event:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+      opacity: 0.9;
+    }
+
+    .week-event:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+      opacity: 0.9;
     }
 
     .event-item.cdk-drag-dragging {
@@ -461,22 +525,42 @@ import {
       background: #ddd;
     }
 
-    .event-content {
+    .events-container {
       display: flex;
       flex-direction: column;
-      gap: 2px;
+      gap: 1px;
+      overflow: visible;
+      flex: 1;
+      margin-top: 4px;
+      min-height: 80px;
+      width: 100%;
+      min-width: 120px;
+    }
+
+    .event-content {
+      display: block;
+      width: 100%;
+      min-height: 24px;
+      line-height: 1.3;
     }
 
     .event-title {
       font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
+      white-space: normal;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      font-size: 11px;
+      line-height: 1.3;
+      max-width: 100%;
+      display: block;
+      margin-bottom: 2px;
     }
 
     .event-time {
-      font-size: 10px;
-      opacity: 0.8;
+      font-size: 9px;
+      opacity: 0.9;
+      display: block;
+      line-height: 1.2;
     }
 
     .drag-preview {
@@ -819,6 +903,9 @@ export class CalendarComponent implements OnInit, OnDestroy {
   calendarWeek$!: Observable<CalendarWeek | null>;
   calendarDay$!: Observable<CalendarDay | null>;
   
+  private http = inject(HttpClient);
+  private env = inject<Environment>(ENVIRONMENT);
+  
   constructor(public calendarService: CalendarService, private postDrawer: PostDrawerService) {}
   
   ngOnInit(): void {
@@ -955,8 +1042,86 @@ export class CalendarComponent implements OnInit, OnDestroy {
     return event.id;
   }
 
+  trackByHour(index: number, hour: number): number {
+    return hour;
+  }
+
   openNewPost(): void {
     this.postDrawer.openDrawer('create');
+  }
+
+  onEventClick(event: CalendarEvent): void {
+    // Single click - open post for editing
+    if (event.postId) {
+      this.openPostForEdit(event.postId);
+    }
+  }
+
+  onEventDoubleClick(event: CalendarEvent): void {
+    // Double click - also open post for editing (same as single click)
+    if (event.postId) {
+      this.openPostForEdit(event.postId);
+    }
+  }
+
+  private openPostForEdit(postId: string): void {
+    // Fetch the complete post data before opening the drawer
+    this.http.get<any>(`${this.env.apiBaseUrl}/posts/${postId}`)
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (post) => {
+          console.log('📅 Calendar: Opening post for edit:', post);
+          // Open the drawer with the complete post data
+          this.postDrawer.openDrawer('edit', post);
+        },
+        error: (error) => {
+          console.error('Failed to load post for editing:', error);
+          // Don't open the drawer with incomplete data - show error instead
+          alert('Failed to load post for editing. Please try again.');
+        }
+      });
+  }
+
+  onEmptyDayClick(date: Date, event: Event): void {
+    // Prevent event bubbling from child elements
+    if ((event.target as HTMLElement).closest('.event-item')) {
+      return;
+    }
+    
+    // Open new post drawer with date pre-filled (default time: 9:00 AM)
+    const scheduledDateTime = new Date(date);
+    scheduledDateTime.setHours(9, 0, 0, 0);
+    
+    this.openNewPostWithSchedule(scheduledDateTime);
+  }
+
+  onEmptyTimeSlotClick(date: Date, hour: number, event: Event): void {
+    // Prevent event bubbling from child elements
+    if ((event.target as HTMLElement).closest('.week-event, .day-event')) {
+      return;
+    }
+    
+    // Open new post drawer with specific date and time pre-filled
+    const scheduledDateTime = new Date(date);
+    scheduledDateTime.setHours(hour, 0, 0, 0);
+    
+    this.openNewPostWithSchedule(scheduledDateTime);
+  }
+
+  private openNewPostWithSchedule(scheduledDateTime: Date): void {
+    // CRITICAL FIX: Don't pass a post object with an ID to create mode
+    // This was potentially causing the post drawer to treat it as an edit operation
+    // Instead, just open in create mode and let the drawer handle scheduling separately
+    
+    console.log('📅 Opening new post with scheduled time:', scheduledDateTime);
+    
+    // Open the post drawer in create mode without passing a post object
+    // The scheduling will need to be handled differently
+    this.postDrawer.openDrawer('create');
+    
+    // TODO: Need to implement a way to pre-fill scheduling in the drawer
+    // For now, this prevents the potential ID confusion that might be causing
+    // posts to be overwritten
   }
 
   // Helper methods for Week and Day views
@@ -981,9 +1146,6 @@ export class CalendarComponent implements OnInit, OnDestroy {
   }
 
   // Time-based drag and drop helpers
-  trackByHour(index: number, hour: number): number {
-    return hour;
-  }
 
   getEventsForHour(events: CalendarEvent[], hour: number): CalendarEvent[] {
     return events.filter(event => {

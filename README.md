@@ -1,36 +1,62 @@
-# AutoContent Pro
+# 🚀 AutoContent Pro
 
-AutoContent Pro — a next-gen SaaS built to beat Publer and set new standards in automated social media content marketing.
+**Next-generation social media automation platform** - A comprehensive SaaS solution for automated content creation, scheduling, and multi-platform publishing with advanced analytics and affiliate management.
+
+## ✨ Key Features
+
+- **🤖 AI Content Generation** - Automated post creation with multiple variants
+- **📅 Smart Scheduling** - Multi-timezone content calendar with drag-drop interface
+- **📊 Advanced Analytics** - Real-time performance tracking across all platforms
+- **💰 Affiliate System** - Built-in referral program with 30% commission tracking
+- **💳 Billing Management** - Subscription plans with usage-based billing
+- **📱 WhatsApp Integration** - Approval workflows via WhatsApp Business API
+- **🎨 Brand Management** - Multi-brand support with brand kits and templates
+- **🔐 Enterprise Security** - Multi-tenant architecture with role-based access
 
 ## 🏗️ Architecture
 
-This is an Nx monorepo containing:
+Modern **Nx monorepo** with microservices architecture:
 
-### Applications
-- **`api`** - NestJS REST API server
-- **`web`** - Angular standalone web application (SSR disabled)
-- **`wa-worker`** - Node.js service for WhatsApp automation using whatsapp-web.js
+### Core Applications
+- **`api`** - NestJS REST API with PostgreSQL & Prisma ORM
+- **`web`** - Angular 17+ standalone web application
+- **`wa-worker`** - WhatsApp Business API integration service
 
-### Libraries
-- **`libs/types`** - Shared TypeScript type definitions
+### Shared Libraries
+- **`libs/types`** - TypeScript type definitions
 - **`libs/utils`** - Common utility functions
-- **`libs/queue`** - BullMQ client wrappers for job processing
+- **`libs/queue`** - BullMQ job processing
 
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js 18 LTS (see `.nvmrc`)
-- pnpm 8.15.6+
-- Redis (for queue management)
+- **Node.js 18 LTS** (see `.nvmrc`)
+- **pnpm 8.15.6+**
+- **PostgreSQL 14+** (database)
+- **Redis** (queue management)
 
-### Installation
+### Installation & Setup
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 pnpm install
 
-# Start all services in development mode
+# 2. Setup database
+pnpm prisma migrate dev
+pnpm prisma generate
+
+# 3. Seed demo data
+pnpm db:seed
+
+# 4. Start all services
 pnpm dev:all
+```
+
+### Demo Login Credentials
+```
+Email: owner@demo.io
+Password: Pass@123
+Role: OWNER (full access)
 ```
 
 ### Individual Services
@@ -96,21 +122,30 @@ docker build -f apps/wa-worker/Dockerfile -t autocontent-pro-wa-worker .
 
 ### Environment Variables
 
-Create `.env` files in the root directory:
+Create `.env` file in the root directory:
 
 ```bash
+# Database
+DATABASE_URL="postgresql://username:password@localhost:5432/autocontent_pro"
+
 # API Configuration
 PORT=3000
 NODE_ENV=development
+JWT_SECRET="your-jwt-secret-key"
 
-# Redis Configuration (for queues)
+# Redis (Queue Management)
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_PASSWORD=
 REDIS_DB=0
 
-# WhatsApp Worker Configuration
+# WhatsApp Integration
 WA_WORKER_CONCURRENCY=3
+
+# Optional: External Services
+# AWS_ACCESS_KEY_ID=your-aws-key
+# AWS_SECRET_ACCESS_KEY=your-aws-secret
+# OPENAI_API_KEY=your-openai-key
 ```
 
 ### VSCode Setup
@@ -175,6 +210,25 @@ git commit -m "fix: resolve bug"
 git commit -m "docs: update README"
 ```
 
+## 📊 System Features
+
+### 📝 Content Management
+- **Multi-Brand Support** - Manage multiple brands with custom brand kits
+- **AI Content Generation** - Generate post variants with different tones
+- **Smart Scheduling** - Timezone-aware scheduling across platforms
+- **Approval Workflows** - WhatsApp-based content approval system
+
+### 📊 Analytics & Reporting
+- **Real-time Analytics** - Track impressions, engagement, clicks across platforms
+- **Performance Insights** - Identify top-performing content and optimal posting times
+- **Revenue Tracking** - Monitor subscription usage and billing metrics
+
+### 💰 Business Features
+- **Affiliate Program** - 30% commission tracking with automated payouts
+- **Subscription Billing** - STARTER ($29), GROWTH ($79), AGENCY ($199) plans
+- **Usage Monitoring** - Track post credits, image credits, and brand limits
+- **Multi-tenant Architecture** - Complete tenant isolation and security
+
 ## 🚀 Deployment
 
 ### Production Build
@@ -186,12 +240,61 @@ pnpm nx build web --prod
 pnpm nx build wa-worker --prod
 ```
 
-### Docker Deployment
+### Database Migration
 
 ```bash
-# Build and run with Docker Compose (create docker-compose.yml as needed)
-docker-compose up --build
+# Run migrations in production
+pnpm prisma migrate deploy
+pnpm prisma generate
 ```
+
+## 🏭 Production Deployment
+
+### Environment Setup
+```bash
+# Production environment variables
+NODE_ENV=production
+DATABASE_URL="postgresql://user:pass@host:5432/autocontent_pro"
+JWT_SECRET="your-production-jwt-secret"
+REDIS_HOST=your-redis-host
+REDIS_PORT=6379
+```
+
+### Build & Deploy
+```bash
+# Build for production
+pnpm nx build api --prod
+pnpm nx build web --prod
+
+# Run database migrations
+pnpm prisma migrate deploy
+
+# Start production server
+node dist/apps/api/main.js
+```
+
+## 🔧 Troubleshooting
+
+### Common Issues
+- **Database Connection**: Ensure PostgreSQL is running and DATABASE_URL is correct
+- **Authentication Errors**: Verify JWT_SECRET is set and consistent
+- **Brand Loading Issues**: Check API server is running and accessible
+- **Post Creation Problems**: Ensure brands are seeded and user has proper role
+
+### Health Checks
+```bash
+# API Health
+curl http://localhost:3000/api/health
+
+# Database Status  
+curl http://localhost:3000/api/db/status
+```
+
+## 📚 Documentation
+
+Detailed technical documentation available in:
+- `docs/AI_CONTENT_GENERATION.md` - AI content generation system
+- `docs/QUEUE_SYSTEM.md` - Redis and BullMQ queue architecture
 
 ## 🤝 Contributing
 
@@ -201,17 +304,8 @@ docker-compose up --build
 4. Push to the branch: `git push origin feature/amazing-feature`
 5. Open a Pull Request
 
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For support and questions:
-- Create an issue in this repository
-- Check the documentation in each app's README
-- Review the Nx documentation: https://nx.dev
-
 ---
 
-Built with ❤️ using Nx, NestJS, Angular, and Node.js
+**Built with ❤️ using Nx, NestJS, Angular, and Node.js**
+
+*AutoContent Pro - Next-generation social media automation platform*

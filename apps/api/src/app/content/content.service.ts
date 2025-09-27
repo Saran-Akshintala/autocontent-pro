@@ -1,7 +1,8 @@
-import { Injectable, Logger, BadRequestException, NotFoundException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, Inject, forwardRef, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { AIService } from '../ai/ai.service';
 import { QueueService } from '../queue/queue.service';
+import { BillingService } from '../billing/billing.service';
 import {
   GenerateContentRequest,
   GenerateVariantsRequest,
@@ -18,6 +19,7 @@ export class ContentService {
   constructor(
     private prisma: PrismaService,
     private aiService: AIService,
+    private billingService: BillingService,
     @Inject(forwardRef(() => QueueService))
     private queueService: QueueService
   ) {}
@@ -28,6 +30,19 @@ export class ContentService {
     request: GenerateContentRequest
   ) {
     this.logger.log(`🚀 Starting monthly content generation for brand ${request.brandId}`);
+    
+    // Calculate total posts to be generated (30 days * platforms)
+    const totalPosts = 30 * request.platforms.length;
+    
+    // Check usage limits before proceeding
+    const usageCheck = await this.billingService.canUseFeature(tenantId, 'POST_GENERATION', totalPosts);
+    if (!usageCheck.allowed) {
+      throw new ForbiddenException({
+        message: usageCheck.reason,
+        code: 'USAGE_LIMIT_EXCEEDED',
+        usage: usageCheck.usage
+      });
+    }
 
     // Verify brand access
     const brand = await this.prisma.brand.findFirst({
@@ -116,19 +131,29 @@ export class ContentService {
         posts: createdPosts,
       };
     } catch (error) {
-      this.logger.error('Monthly content generation failed:', error);
+      this.logger.error('Failed to process monthly content generation:', error);
       throw error;
     }
   }
 
-  async generateContentVariants(
+  async generateVariants(
     tenantId: string,
     postId: string,
     request: GenerateVariantsRequest
   ) {
-    this.logger.log(`🔄 Generating variants for post ${postId}`);
+    this.logger.log(`🔄 Generating ${request.variantCount} variants for post ${postId}`);
+    
+    // Check usage limits for variant generation (treat as post generation)
+    const usageCheck = await this.billingService.canUseFeature(tenantId, 'POST_GENERATION', request.variantCount);
+    if (!usageCheck.allowed) {
+      throw new ForbiddenException({
+        message: usageCheck.reason,
+        code: 'USAGE_LIMIT_EXCEEDED',
+        usage: usageCheck.usage
+      });
+    }
 
-    // Get the original post
+    // Verify post access
     const post = await this.prisma.post.findFirst({
       where: {
         id: postId,
@@ -173,6 +198,25 @@ export class ContentService {
       }
 
       this.logger.log(`✅ Generated ${variants.variants.length} variants for post ${postId}`);
+      
+      // Track usage for variant generation
+      try {
+        await this.billingService.trackUsage(
+          tenantId,
+          'POST_GENERATION',
+          variants.variants.length,
+          {
+            postId,
+            brandId: post.brandId,
+            contentType: 'variants',
+            originalPostTitle: post.title
+          }
+        );
+        this.logger.log(`📊 Tracked usage: ${variants.variants.length} variants generated`);
+      } catch (error) {
+        this.logger.error('Failed to track variant usage:', error);
+        // Don't fail the entire operation if usage tracking fails
+      }
 
       return {
         success: true,
@@ -247,6 +291,26 @@ export class ContentService {
           this.logger.error(`Failed to create post for ${platform} - Day ${day.dayIndex}:`, error);
           // Continue with other posts even if one fails
         }
+      }
+    }
+
+    // Track usage for all created posts
+    if (createdPosts.length > 0) {
+      try {
+        await this.billingService.trackUsage(
+          tenantId,
+          'POST_GENERATION',
+          createdPosts.length,
+          {
+            brandId,
+            contentType: 'monthly_plan',
+            postIds: createdPosts.map(p => p.id)
+          }
+        );
+        this.logger.log(`📊 Tracked usage: ${createdPosts.length} posts generated`);
+      } catch (error) {
+        this.logger.error('Failed to track usage:', error);
+        // Don't fail the entire operation if usage tracking fails
       }
     }
 

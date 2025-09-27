@@ -1,9 +1,13 @@
 import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
 import { Observable, Subject, takeUntil } from 'rxjs';
 import { PostDrawerService } from './services/post-drawer.service';
+import { PostDrawerComponent } from './components/post-drawer/post-drawer.component';
 import { ENVIRONMENT, Environment } from '../../core/tokens/environment.token';
+import { ToastService } from '../../core/services/toast.service';
+import { ActivatedRoute, Router } from '@angular/router';
 
 // Local types
 interface Post {
@@ -39,7 +43,7 @@ interface PostsResponse {
 @Component({
   selector: 'app-posts',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule, PostDrawerComponent],
   template: `
     <div class="posts-page">
       <div class="page-header">
@@ -54,26 +58,39 @@ interface PostsResponse {
 
       <div class="posts-filters">
         <div class="filter-group">
-          <select class="filter-select">
+          <select class="filter-select" [(ngModel)]="selectedStatus" (change)="applyFilters()">
             <option>All Statuses</option>
-            <option>Draft</option>
-            <option>Pending Approval</option>
-            <option>Scheduled</option>
-            <option>Published</option>
-            <option>Paused</option>
-            <option>Archived</option>
+            <option>DRAFT</option>
+            <option>PENDING_APPROVAL</option>
+            <option>SCHEDULED</option>
+            <option>PUBLISHED</option>
+            <option>PAUSED</option>
+            <option>FAILED</option>
           </select>
-          <select class="filter-select">
+          <select class="filter-select" [(ngModel)]="selectedPlatform" (change)="applyFilters()">
             <option>All Platforms</option>
-            <option>Instagram</option>
-            <option>LinkedIn</option>
-            <option>Twitter</option>
-            <option>Facebook</option>
+            <option>INSTAGRAM</option>
+            <option>LINKEDIN</option>
+            <option>TWITTER</option>
+            <option>FACEBOOK</option>
           </select>
+          <button class="btn btn-outline clear-filters" (click)="clearFilters()" 
+                  *ngIf="selectedStatus !== 'All Statuses' || selectedPlatform !== 'All Platforms' || searchQuery.trim()">
+            Clear Filters
+          </button>
         </div>
         <div class="search-box">
-          <input type="text" placeholder="Search posts..." class="search-input">
+          <input type="text" placeholder="Search posts..." class="search-input" [(ngModel)]="searchQuery" (input)="applyFilters()">
+          <span class="search-icon">🔍</span>
         </div>
+      </div>
+
+      <!-- Filter Results Count -->
+      <div class="filter-results" *ngIf="!loading && allPosts.length > 0">
+        <span class="results-count">
+          Showing {{ posts.length }} of {{ allPosts.length }} posts
+          <span *ngIf="posts.length !== allPosts.length" class="filtered-indicator">(filtered)</span>
+        </span>
       </div>
 
       <div class="posts-grid" *ngIf="!loading">
@@ -95,6 +112,15 @@ interface PostsResponse {
             <div class="post-actions">
               <button class="btn-icon" (click)="openEdit(post)" title="Edit">✏️</button>
               <button class="btn-icon" (click)="viewPost(post)" title="View">👁️</button>
+              <button class="btn-icon" (click)="copyPostLink(post)" title="Copy Link">🔗</button>
+              <button 
+                *ngIf="canForcePublish(post)" 
+                class="btn-icon btn-publish" 
+                (click)="forcePublishPost(post)" 
+                title="Force Publish Now"
+                [disabled]="publishingPosts.has(post.id)">
+                {{ publishingPosts.has(post.id) ? '⏳' : '🚀' }}
+              </button>
               <button class="btn-icon" (click)="deletePost(post)" title="Delete">🗑️</button>
             </div>
           </div>
@@ -110,6 +136,9 @@ interface PostsResponse {
         <button class="btn btn-primary" (click)="openCreate()">+ Create Post</button>
       </div>
     </div>
+    
+    <!-- Post Drawer Component -->
+    <app-post-drawer></app-post-drawer>
   `,
   styles: [`
     .posts-page {
@@ -149,22 +178,35 @@ interface PostsResponse {
       cursor: pointer;
       transition: all 0.2s ease;
     }
-
     .btn-primary {
       background: #3498db;
       color: white;
     }
 
-    .btn-primary:hover {
-      background: #2980b9;
+    .btn-icon:hover {
+      background: #f8f9fa;
       transform: translateY(-1px);
     }
 
+    .btn-publish {
+      background: #28a745 !important;
+      color: white !important;
+    }
+
+    .btn-publish:hover:not(:disabled) {
+      background: #218838 !important;
+    }
+
+    .btn-publish:disabled {
+      background: #6c757d !important;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
     .posts-filters {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 32px;
+      margin-bottom: 24px;
       padding: 20px;
       background: white;
       border-radius: 12px;
@@ -174,6 +216,23 @@ interface PostsResponse {
     .filter-group {
       display: flex;
       gap: 12px;
+      align-items: center;
+    }
+
+    .clear-filters {
+      padding: 8px 16px;
+      font-size: 12px;
+    }
+
+    .btn-outline {
+      background: transparent;
+      border: 1px solid #dee2e6;
+      color: #6c757d;
+    }
+
+    .btn-outline:hover {
+      background: #f8f9fa;
+      color: #495057;
     }
 
     .filter-select {
@@ -186,6 +245,20 @@ interface PostsResponse {
       min-width: 140px;
     }
 
+    .search-box {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .search-icon {
+      position: absolute;
+      right: 12px;
+      color: #6c757d;
+      pointer-events: none;
+      font-size: 16px;
+    }
+
     .search-input {
       padding: 8px 16px;
       border: 1px solid #dee2e6;
@@ -193,11 +266,25 @@ interface PostsResponse {
       font-size: 14px;
       width: 250px;
     }
-
     .search-input:focus {
       outline: none;
       border-color: #3498db;
       box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+    }
+
+    .filter-results {
+      margin-bottom: 16px;
+      padding: 8px 0;
+    }
+
+    .results-count {
+      font-size: 14px;
+      color: #6c757d;
+    }
+
+    .filtered-indicator {
+      color: #3498db;
+      font-weight: 500;
     }
 
     .posts-grid {
@@ -371,20 +458,35 @@ interface PostsResponse {
 })
 export class PostsComponent implements OnInit, OnDestroy {
   posts: Post[] = [];
-  loading = true;
+  allPosts: Post[] = []; // Store all posts for filtering
+  loading = false;
+  publishingPosts = new Set<string>();
+  userRole: string = '';
   private destroy$ = new Subject<void>();
-  private readonly env = inject<Environment>(ENVIRONMENT);
+
+  // Filter properties
+  selectedStatus: string = 'All Statuses';
+  selectedPlatform: string = 'All Platforms';
+  searchQuery: string = '';
+
+  private env = inject(ENVIRONMENT);
 
   constructor(
     private postDrawer: PostDrawerService,
-    private http: HttpClient
+    private http: HttpClient,
+    private toastService: ToastService,
+    private route: ActivatedRoute,
+    private router: Router
   ) {}
 
   private postSavedListener = () => this.loadPosts();
 
   ngOnInit(): void {
     this.loadPosts();
-    // Listen for post saves to reload the list
+    this.handleDeepLinking();
+    this.loadUserRole();
+    
+    // Listen for post-saved events to reload
     window.addEventListener('post-saved', this.postSavedListener);
   }
 
@@ -394,20 +496,78 @@ export class PostsComponent implements OnInit, OnDestroy {
     window.removeEventListener('post-saved', this.postSavedListener);
   }
 
+  // Handle deep linking - check for postId in query params
+  handleDeepLinking(): void {
+    this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(params => {
+      if (params['edit']) {
+        const postId = params['edit'];
+        this.openPostById(postId);
+        // Clean up URL after opening
+        this.router.navigate([], { 
+          relativeTo: this.route,
+          queryParams: {},
+          replaceUrl: true
+        });
+      }
+    });
+  }
+
   loadPosts(): void {
     this.loading = true;
     this.http.get<PostsResponse>(`${this.env.apiBaseUrl}/posts`)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: (response) => {
-          this.posts = response.posts;
+          this.allPosts = response.posts; // Store all posts
+          this.applyFilters(); // Apply current filters
           this.loading = false;
         },
         error: (error) => {
           console.error('Failed to load posts:', error);
+          this.toastService.error('Loading Error', 'Failed to load posts. Please try again.');
           this.loading = false;
         }
       });
+  }
+
+  applyFilters(): void {
+    let filteredPosts = [...this.allPosts];
+
+    // Filter by status
+    if (this.selectedStatus !== 'All Statuses') {
+      filteredPosts = filteredPosts.filter(post => 
+        (post.status || 'DRAFT').toUpperCase() === this.selectedStatus
+      );
+    }
+
+    // Filter by platform
+    if (this.selectedPlatform !== 'All Platforms') {
+      filteredPosts = filteredPosts.filter(post => 
+        post.content.platforms.some(platform => 
+          platform.toUpperCase() === this.selectedPlatform
+        )
+      );
+    }
+
+    // Filter by search query
+    if (this.searchQuery.trim()) {
+      const query = this.searchQuery.toLowerCase().trim();
+      filteredPosts = filteredPosts.filter(post => 
+        post.title.toLowerCase().includes(query) ||
+        post.content.hook.toLowerCase().includes(query) ||
+        post.content.body.toLowerCase().includes(query) ||
+        post.content.hashtags.some(tag => tag.toLowerCase().includes(query))
+      );
+    }
+
+    this.posts = filteredPosts;
+  }
+
+  clearFilters(): void {
+    this.selectedStatus = 'All Statuses';
+    this.selectedPlatform = 'All Platforms';
+    this.searchQuery = '';
+    this.applyFilters();
   }
 
   openCreate(): void {
@@ -436,16 +596,22 @@ export class PostsComponent implements OnInit, OnDestroy {
     if (!confirm('Delete this post? This action cannot be undone.')) {
       return;
     }
+    
+    // Optimistic update - remove from UI immediately
+    const originalPosts = [...this.posts];
+    this.posts = this.posts.filter(p => p.id !== post.id);
+    
     this.http.delete<void>(`${this.env.apiBaseUrl}/posts/${post.id}`)
       .pipe(takeUntil(this.destroy$))
       .subscribe({
         next: () => {
-          // Reload list after deletion
-          this.loadPosts();
+          this.toastService.success('Post Deleted', `"${post.title}" has been deleted successfully.`);
         },
         error: (error) => {
           console.error('Failed to delete post:', error);
-          alert('Failed to delete post. Please try again.');
+          // Revert optimistic update
+          this.posts = originalPosts;
+          this.toastService.error('Delete Failed', 'Failed to delete post. Please try again.');
         }
       });
   }
@@ -494,5 +660,99 @@ export class PostsComponent implements OnInit, OnDestroy {
       return this.formatDate(post.schedule.runAt);
     }
     return `Last edited ${this.formatDate(post.updatedAt)}`;
+  }
+  
+  // Deep linking functionality
+  openPostById(postId: string): void {
+    const post = this.posts.find(p => p.id === postId);
+    if (post) {
+      this.openEdit(post);
+    } else {
+      // Post not found in current list, try to fetch it
+      this.http.get<Post>(`${this.env.apiBaseUrl}/posts/${postId}`)
+        .pipe(takeUntil(this.destroy$))
+        .subscribe({
+          next: (post) => {
+            this.openEdit(post);
+          },
+          error: (error) => {
+            console.error('Failed to load post for editing:', error);
+            this.toastService.error('Post Not Found', 'The requested post could not be found.');
+          }
+        });
+    }
+  }
+  
+  // Generate deep link for sharing
+  copyPostLink(post: Post): void {
+    const url = `${window.location.origin}${window.location.pathname}?edit=${post.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      this.toastService.success('Link Copied', 'Post edit link copied to clipboard.');
+    }).catch(() => {
+      this.toastService.error('Copy Failed', 'Failed to copy link to clipboard.');
+    });
+  }
+
+  loadUserRole(): void {
+    // Get user role from localStorage or API
+    const authData = localStorage.getItem('auth');
+    if (authData) {
+      try {
+        const auth = JSON.parse(authData);
+        this.userRole = auth.user?.role || '';
+      } catch (error) {
+        console.error('Failed to parse auth data:', error);
+      }
+    }
+  }
+
+  canForcePublish(post: Post): boolean {
+    // Only OWNER and ADMIN can force publish
+    const canPublish = this.userRole === 'OWNER' || this.userRole === 'ADMIN';
+    // Only show for posts that are not already published
+    const isPublishable = post.status !== 'PUBLISHED' && post.status !== 'FAILED';
+    return canPublish && isPublishable;
+  }
+
+  forcePublishPost(post: Post): void {
+    if (this.publishingPosts.has(post.id)) {
+      return; // Already publishing
+    }
+
+    this.publishingPosts.add(post.id);
+    
+    this.http.post(`${this.env.apiBaseUrl}/publish/dispatch/${post.id}`, {})
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (response: any) => {
+          this.publishingPosts.delete(post.id);
+          
+          if (response.success) {
+            // Update post status optimistically
+            const postIndex = this.posts.findIndex(p => p.id === post.id);
+            if (postIndex !== -1) {
+              this.posts[postIndex].status = 'PUBLISHED';
+            }
+            
+            this.toastService.success(
+              'Post Published! 🚀', 
+              `Successfully published to ${response.data.successfulPlatforms} platforms`
+            );
+            
+            // Reload posts to get updated data
+            this.loadPosts();
+          } else {
+            this.toastService.error('Publish Failed', response.message || 'Failed to publish post');
+          }
+        },
+        error: (error) => {
+          this.publishingPosts.delete(post.id);
+          console.error('Failed to publish post:', error);
+          this.toastService.error(
+            'Publish Failed', 
+            error.error?.message || 'Failed to publish post. Please try again.'
+          );
+        }
+      });
   }
 }

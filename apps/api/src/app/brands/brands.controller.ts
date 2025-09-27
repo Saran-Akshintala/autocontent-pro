@@ -13,8 +13,8 @@ export class BrandsController {
   @Get()
   @Roles('OWNER', 'ADMIN', 'STAFF', 'CLIENT')
   async findAll(@Request() req: any) {
-    const tenantId = req.tenantId;
-    const brands = await this.brandsService.findAll(tenantId);
+    const tenantId = req.user?.tenantId || req.tenantId;
+    const brands = await this.brandsService.findAll();
     return { brands };
   }
 }

@@ -15,7 +15,7 @@ async function main() {
       create: {
         id: 'demo-tenant',
         name: 'Demo Company',
-        plan: 'PROFESSIONAL',
+        plan: 'GROWTH',
         whatsappMode: 'ADVANCED',
       },
     });
@@ -226,6 +226,109 @@ async function main() {
     );
 
     console.log(`✅ Created ${analytics.length} analytics records`);
+
+    // Create affiliate system data
+    console.log('Creating affiliate system data...');
+    
+    try {
+      // Create affiliate code for the demo user
+      const affiliate = await prisma.affiliate.create({
+        data: {
+          code: 'DEMO2024',
+          ownerUserId: user.id,
+          isActive: true,
+        },
+      });
+    
+    console.log(`✅ Created affiliate code: ${affiliate.code}`);
+    
+    // Create sample referrals
+    const referralTenants = [
+      {
+        id: 'referred-tenant-1',
+        name: 'TechCorp Solutions',
+        plan: 'GROWTH' as const,
+        signupDate: new Date('2024-08-15'),
+        activatedAt: new Date('2024-08-20'),
+        status: 'ACTIVE' as const
+      },
+      {
+        id: 'referred-tenant-2', 
+        name: 'Marketing Pro Agency',
+        plan: 'STARTER' as const,
+        signupDate: new Date('2024-09-01'),
+        activatedAt: new Date('2024-09-05'),
+        status: 'ACTIVE' as const
+      },
+      {
+        id: 'referred-tenant-3',
+        name: 'Creative Studio LLC',
+        plan: 'STARTER' as const,
+        signupDate: new Date('2024-09-20'),
+        activatedAt: null,
+        status: 'PENDING' as const
+      }
+    ];
+    
+    for (const refData of referralTenants) {
+      // Create referred tenant
+      const refTenant = await prisma.tenant.create({
+        data: {
+          id: refData.id,
+          name: refData.name,
+          plan: refData.plan,
+          whatsappMode: 'BASIC',
+        },
+      });
+      
+      // Create referral record
+      await prisma.referral.create({
+        data: {
+          code: affiliate.code,
+          tenantId: refTenant.id,
+          status: refData.status,
+          signupDate: refData.signupDate,
+          activatedAt: refData.activatedAt,
+        },
+      });
+      
+      // Create payout records for active referrals
+      if (refData.status === 'ACTIVE' && refData.activatedAt) {
+        const planPrices = { STARTER: 29, GROWTH: 79, AGENCY: 199 };
+        const monthlyRevenue = planPrices[refData.plan];
+        const commission = monthlyRevenue * 0.30;
+        
+        // Create payouts for August and September 2024
+        const periods = ['2024-08', '2024-09'];
+        
+        for (const period of periods) {
+          const dueDate = new Date(`${period}-15`);
+          dueDate.setMonth(dueDate.getMonth() + 1);
+          
+          const isPaid = period === '2024-08';
+          
+          await prisma.payoutLedger.create({
+            data: {
+              affiliateCode: affiliate.code,
+              tenantId: refTenant.id,
+              amount: commission,
+              currency: 'USD',
+              period: period,
+              status: isPaid ? 'PAID' : 'PENDING',
+              dueDate: dueDate,
+              paidAt: isPaid ? new Date(`${period}-15`) : null,
+            },
+          });
+        }
+      }
+      
+      console.log(`✅ Created referral: ${refData.name} (${refData.status})`);
+    }
+    
+    } catch (affiliateError) {
+      console.log('⚠️ Skipping affiliate data creation (tables may not exist yet)');
+      console.log('Run the seed again after ensuring affiliate tables are created');
+    }
 
     console.log('\n🎉 Database seeded successfully!');
     console.log('\n📊 Summary:');

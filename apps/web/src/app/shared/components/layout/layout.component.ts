@@ -1,15 +1,15 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterOutlet, RouterLink, RouterLinkActive, Router } from '@angular/router';
+import { RouterModule, Router, RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { AuthService } from '../../../core/services/auth.service';
-import { User, UserTenant } from '../../../core/models/auth.models';
-import { BrandService } from '../../../core/services/brand.service';
-import { PostDrawerComponent } from '../../../features/posts/components/post-drawer/post-drawer.component';
+import { ThemeService } from '../../../core/services/theme.service';
+import { User, UserTenant, AuthState } from '../../../core/models/auth.models';
+// import { PostDrawerComponent } from '../../../features/posts/components/post-drawer/post-drawer.component';
 
 @Component({
   selector: 'app-layout',
   standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, PostDrawerComponent],
+  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
   template: `
     <div class="layout">
       <!-- Sidebar -->
@@ -53,12 +53,6 @@ import { PostDrawerComponent } from '../../../features/posts/components/post-dra
               <a routerLink="/approvals" routerLinkActive="active" class="nav-link">
                 <span class="nav-icon">✅</span>
                 <span class="nav-text">Approvals</span>
-              </a>
-            </li>
-            <li class="nav-item">
-              <a routerLink="/analytics" routerLinkActive="active" class="nav-link">
-                <span class="nav-icon">📈</span>
-                <span class="nav-text">Analytics</span>
               </a>
             </li>
             <li class="nav-item">
@@ -108,17 +102,6 @@ import { PostDrawerComponent } from '../../../features/posts/components/post-dra
                 </select>
               </div>
 
-              <!-- Brand Switcher -->
-              <div class="tenant-switcher" *ngIf="brandService.brands$ | async as brands">
-                <select
-                  class="tenant-select"
-                  [value]="(brandService.currentBrand$ | async)?.id || ''"
-                  (change)="onBrandChange($event)"
-                >
-                  <option value="" disabled>Select Brand</option>
-                  <option *ngFor="let b of brands" [value]="b.id">{{ b.name }}</option>
-                </select>
-              </div>
             </div>
           </div>
         </header>
@@ -126,7 +109,7 @@ import { PostDrawerComponent } from '../../../features/posts/components/post-dra
         <div class="content-area">
           <router-outlet></router-outlet>
           <!-- Global Post Drawer Overlay -->
-          <app-post-drawer></app-post-drawer>
+          <!-- <app-post-drawer></app-post-drawer> -->
         </div>
       </main>
     </div>
@@ -146,6 +129,11 @@ import { PostDrawerComponent } from '../../../features/posts/components/post-dra
       display: flex;
       flex-direction: column;
       box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      overflow-y: auto;
     }
 
     .sidebar-header {
@@ -281,6 +269,7 @@ import { PostDrawerComponent } from '../../../features/posts/components/post-dra
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      margin-left: 280px;
     }
 
     .main-header {
@@ -350,10 +339,16 @@ import { PostDrawerComponent } from '../../../features/posts/components/post-dra
     }
   `]
 })
-export class LayoutComponent {
+export class LayoutComponent implements OnInit {
   public readonly authService = inject(AuthService);
-  public readonly brandService = inject(BrandService);
   private readonly router = inject(Router);
+  private readonly themeService = inject(ThemeService);
+
+  ngOnInit(): void {
+    console.log('LayoutComponent initialized');
+    // Initialize theme service
+    this.themeService.loadTenantBranding();
+  }
 
   logout(): void {
     this.authService.logout();
@@ -410,7 +405,7 @@ export class LayoutComponent {
     const target = event.target as HTMLSelectElement;
     const tenantId = target.value;
     
-    this.authService.authState$.subscribe(authState => {
+    this.authService.authState$.subscribe((authState: AuthState) => {
       if (authState.user) {
         const selectedTenant = authState.user.tenants.find((t: UserTenant) => t.tenantId === tenantId);
         if (selectedTenant) {
@@ -420,9 +415,4 @@ export class LayoutComponent {
     }).unsubscribe();
   }
 
-  onBrandChange(event: Event): void {
-    const target = event.target as HTMLSelectElement;
-    const brandId = target.value;
-    this.brandService.setCurrentBrandById(brandId);
-  }
 }

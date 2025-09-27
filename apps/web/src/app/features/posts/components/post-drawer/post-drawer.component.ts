@@ -1,9 +1,13 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, FormArray, Validators } from '@angular/forms';
 import { Subject, takeUntil, debounceTime, combineLatest, Observable, firstValueFrom } from 'rxjs';
 import { PostDrawerService } from '../../services/post-drawer.service';
 import { Brand, BrandService } from '../../../../core/services/brand.service';
+import { ToastService } from '../../../../core/services/toast.service';
+import { HttpClient } from '@angular/common/http';
+import { ENVIRONMENT, Environment } from '../../../../core/tokens/environment.token';
+import { ImageGalleryComponent } from '../image-gallery/image-gallery.component';
 
 // Local types to avoid import issues
 interface Post {
@@ -20,12 +24,31 @@ interface Post {
     runAt: string;
     timezone: string;
   };
+  brand?: {
+    id: string;
+    name: string;
+    brandKit?: {
+      colors?: string[];
+      fonts?: string[];
+      logoUrl?: string;
+    };
+  };
+}
+
+interface ContentVariant {
+  hook: string;
+  body: string;
+  hashtags: string[];
+}
+
+interface VariantsResponse {
+  variants: ContentVariant[];
 }
 
 @Component({
   selector: 'app-post-drawer',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule],
+  imports: [CommonModule, ReactiveFormsModule, ImageGalleryComponent],
   template: `
     <div class="drawer-overlay" *ngIf="isOpen$ | async" (click)="closeIfOverlay($event)">
       <div class="drawer-panel" (click)="$event.stopPropagation()">
@@ -39,13 +62,25 @@ interface Post {
 
         <div class="drawer-content">
           <form [formGroup]="form" (ngSubmit)="onSubmit()">
-            <!-- Brand -->
+            <!-- Brand with Brand Kit Preview -->
             <div class="form-row">
               <label>Brand</label>
-              <select formControlName="brandId">
+              <select formControlName="brandId" (change)="onBrandChange($event)">
                 <option value="">Select brand</option>
                 <option *ngFor="let b of brands$ | async" [value]="b.id">{{ b.name }}</option>
               </select>
+              <div class="brand-kit-preview" *ngIf="selectedBrand?.brandKit">
+                <div class="brand-colors" *ngIf="selectedBrand?.brandKit?.colors?.length">
+                  <span class="brand-color" 
+                        *ngFor="let color of selectedBrand?.brandKit?.colors || []" 
+                        [style.background-color]="color"
+                        [title]="color">
+                  </span>
+                </div>
+                <div class="brand-fonts" *ngIf="selectedBrand?.brandKit?.fonts?.length">
+                  <span class="brand-font" *ngFor="let font of selectedBrand?.brandKit?.fonts || []">{{ font }}</span>
+                </div>
+              </div>
             </div>
 
             <!-- Title -->
@@ -54,47 +89,125 @@ interface Post {
               <input type="text" formControlName="title" placeholder="Post title" />
             </div>
 
-            <!-- Hook -->
+            <!-- Platform Tabs -->
             <div class="form-row">
-              <label>Hook</label>
-              <textarea formControlName="hook" rows="2" placeholder="Attention-grabbing opener..."></textarea>
-              <div class="hint">{{ form.get('hook')?.value?.length || 0 }}/150</div>
-            </div>
-
-            <!-- Body -->
-            <div class="form-row">
-              <label>Body</label>
-              <textarea formControlName="body" rows="6" placeholder="Write your content..."></textarea>
-              <div class="hint">{{ form.get('body')?.value?.length || 0 }}/2200</div>
-            </div>
-
-            <!-- Hashtags -->
-            <div class="form-row">
-              <label>Hashtags</label>
-              <div class="tags-input">
-                <input type="text" placeholder="#hashtag and press Enter" (keydown.enter)="addHashtag(hashtagInput)" #hashtagInput />
-                <div class="tags-list">
-                  <span class="tag" *ngFor="let tag of hashtags.controls; let i = index">
-                    {{ tag.value }}
-                    <button type="button" (click)="removeHashtag(i)">×</button>
-                  </span>
-                </div>
-                <button class="link" type="button" (click)="autoGenerateHashtags()">✨ Auto-generate</button>
-              </div>
-            </div>
-
-            <!-- Platforms -->
-            <div class="form-row">
-              <label>Platforms</label>
-              <div class="platforms">
-                <label *ngFor="let p of availablePlatforms">
-                  <input type="checkbox" [checked]="isPlatformSelected(p.id)" (change)="togglePlatform(p.id, $event)" />
-                  <span>{{ p.name }}</span>
-                </label>
+              <label>Platforms & Content</label>
+              <div class="platform-tabs">
+                <button type="button" 
+                        *ngFor="let platform of availablePlatforms" 
+                        class="platform-tab"
+                        [class.active]="activePlatform === platform.id"
+                        [class.selected]="isPlatformSelected(platform.id)"
+                        (click)="selectPlatformTab(platform.id)">
+                  {{ getPlatformIcon(platform.id) }} {{ platform.name }}
+                  <span class="platform-indicator" *ngIf="isPlatformSelected(platform.id)">✓</span>
+                </button>
               </div>
               <div class="error-message" *ngIf="submitted && platforms.length === 0">
                 Select at least one platform
               </div>
+            </div>
+
+            <!-- Content for Active Platform -->
+            <div class="platform-content" *ngIf="activePlatform">
+              <div class="content-variants">
+                <div class="variant-tabs">
+                  <button type="button" 
+                          class="variant-tab"
+                          [class.active]="activeVariant === 'current'"
+                          (click)="activeVariant = 'current'">
+                    Current
+                  </button>
+                  <button type="button" 
+                          *ngFor="let variant of contentVariants; let i = index"
+                          class="variant-tab"
+                          [class.active]="activeVariant === 'variant-' + i"
+                          (click)="activeVariant = 'variant-' + i">
+                    Variant {{ i + 1 }}
+                  </button>
+                  <button type="button" 
+                          class="generate-variants-btn"
+                          (click)="generateVariants()"
+                          [disabled]="generatingVariants">
+                    {{ generatingVariants ? '⏳' : '✨' }} Generate Variants
+                  </button>
+                </div>
+
+                <!-- Current Content -->
+                <div class="variant-content" *ngIf="activeVariant === 'current'">
+                  <div class="form-row">
+                    <label>Hook ({{ getPlatformLimits(activePlatform).hookLimit }} chars)</label>
+                    <textarea formControlName="hook" rows="2" 
+                              [placeholder]="'Attention-grabbing opener for ' + getPlatformName(activePlatform) + '...'"
+                              [maxlength]="getPlatformLimits(activePlatform).hookLimit"></textarea>
+                    <div class="hint">{{ form.get('hook')?.value?.length || 0 }}/{{ getPlatformLimits(activePlatform).hookLimit }}</div>
+                  </div>
+
+                  <div class="form-row">
+                    <label>Body ({{ getPlatformLimits(activePlatform).bodyLimit }} chars)</label>
+                    <textarea formControlName="body" rows="6" 
+                              [placeholder]="'Write your content for ' + getPlatformName(activePlatform) + '...'"
+                              [maxlength]="getPlatformLimits(activePlatform).bodyLimit"></textarea>
+                    <div class="hint">{{ form.get('body')?.value?.length || 0 }}/{{ getPlatformLimits(activePlatform).bodyLimit }}</div>
+                  </div>
+
+                  <div class="form-row">
+                    <label>Hashtags</label>
+                    <div class="tags-input">
+                      <input type="text" placeholder="#hashtag and press Enter" (keydown.enter)="addHashtag(hashtagInput)" #hashtagInput />
+                      <div class="tags-list">
+                        <span class="tag" *ngFor="let tag of hashtags.controls; let i = index">
+                          {{ tag.value }}
+                          <button type="button" (click)="removeHashtag(i)">×</button>
+                        </span>
+                      </div>
+                      <button class="link" type="button" (click)="autoGenerateHashtags()">✨ Auto-generate</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Variant Content -->
+                <div class="variant-content" *ngIf="activeVariant.startsWith('variant-')">
+                  <div class="variant-preview">
+                    <div class="form-row">
+                      <label>Hook</label>
+                      <div class="variant-text">{{ getActiveVariantContent()?.hook }}</div>
+                    </div>
+                    <div class="form-row">
+                      <label>Body</label>
+                      <div class="variant-text">{{ getActiveVariantContent()?.body }}</div>
+                    </div>
+                    <div class="form-row" *ngIf="getActiveVariantContent()?.hashtags?.length">
+                      <label>Hashtags</label>
+                      <div class="tags-list">
+                        <span class="tag" *ngFor="let tag of getActiveVariantContent()?.hashtags">
+                          {{ tag }}
+                        </span>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-primary use-variant-btn" (click)="useVariant()">Use This Variant</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Platform Selection Toggle -->
+            <div class="form-row">
+              <label>Enable/Disable Platforms</label>
+              <div class="platforms-toggle">
+                <label *ngFor="let p of availablePlatforms" class="platform-toggle">
+                  <input type="checkbox" [checked]="isPlatformSelected(p.id)" (change)="togglePlatform(p.id, $event)" />
+                  <span>{{ getPlatformIcon(p.id) }} {{ p.name }}</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Image Gallery -->
+            <div class="form-row" *ngIf="currentPostId">
+              <app-image-gallery 
+                [postId]="currentPostId"
+                (imagesGenerated)="onImagesGenerated($event)">
+              </app-image-gallery>
             </div>
 
             <!-- Schedule -->
@@ -126,7 +239,7 @@ interface Post {
   `,
   styles: [`
     .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; justify-content: flex-end; z-index: 1000; }
-    .drawer-panel { width: 560px; max-width: 100%; height: 100%; background: #fff; display: flex; flex-direction: column; box-shadow: -2px 0 12px rgba(0,0,0,.15); }
+    .drawer-panel { width: 720px; max-width: 100%; height: 100%; background: #fff; display: flex; flex-direction: column; box-shadow: -2px 0 12px rgba(0,0,0,.15); }
     .drawer-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid #eee; }
     .drawer-header h3 { margin: 0; font-size: 18px; font-weight: 700; }
     .drawer-header p { margin: 4px 0 0 0; color: #6c757d; font-size: 13px; }
@@ -138,6 +251,42 @@ interface Post {
     input[type=text], textarea, select, input[type=datetime-local] { padding: 10px 12px; border: 1px solid #dee2e6; border-radius: 6px; font-size: 14px; }
     input:focus, textarea:focus, select:focus { outline: none; border-color: #3498db; box-shadow: 0 0 0 2px rgba(52,152,219,.15); }
     .hint { font-size: 12px; color: #6c757d; }
+    .error-message { color: #e74c3c; font-size: 12px; margin-top: 4px; }
+
+    /* Brand Kit Preview */
+    .brand-kit-preview { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .brand-colors { display: flex; gap: 6px; align-items: center; }
+    .brand-color { width: 20px; height: 20px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.1); cursor: pointer; }
+    .brand-fonts { display: flex; gap: 8px; flex-wrap: wrap; }
+    .brand-font { background: #f8f9fa; padding: 4px 8px; border-radius: 4px; font-size: 11px; color: #6c757d; }
+
+    /* Platform Tabs */
+    .platform-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 16px; }
+    .platform-tab { padding: 8px 12px; border: 1px solid #dee2e6; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; display: flex; align-items: center; gap: 6px; transition: all 0.2s ease; position: relative; }
+    .platform-tab:hover { background: #f8f9fa; }
+    .platform-tab.active { background: #3498db; color: #fff; border-color: #3498db; }
+    .platform-tab.selected { border-color: #27ae60; background: #e8f5e8; }
+    .platform-tab.selected.active { background: #3498db; }
+    .platform-indicator { font-size: 10px; background: #27ae60; color: white; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; position: absolute; top: -4px; right: -4px; }
+
+    /* Platform Content */
+    .platform-content { border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; background: #fafafa; }
+    .content-variants { display: flex; flex-direction: column; gap: 16px; }
+    
+    /* Variant Tabs */
+    .variant-tabs { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+    .variant-tab { padding: 6px 12px; border: 1px solid #dee2e6; background: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s ease; }
+    .variant-tab:hover { background: #f8f9fa; }
+    .variant-tab.active { background: #3498db; color: #fff; border-color: #3498db; }
+    .generate-variants-btn { padding: 6px 12px; border: 1px solid #f39c12; background: #f39c12; color: #fff; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s ease; margin-left: auto; }
+    .generate-variants-btn:hover:not(:disabled) { background: #e67e22; }
+    .generate-variants-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    /* Variant Content */
+    .variant-content { background: #fff; border-radius: 6px; padding: 16px; }
+    .variant-preview { display: flex; flex-direction: column; gap: 12px; }
+    .variant-text { background: #f8f9fa; padding: 12px; border-radius: 6px; border-left: 3px solid #3498db; font-size: 14px; line-height: 1.5; white-space: pre-wrap; }
+    .use-variant-btn { align-self: flex-start; }
 
     .tags-input { display: flex; flex-direction: column; gap: 8px; }
     .tags-list { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -145,17 +294,31 @@ interface Post {
     .tag button { border: none; background: transparent; cursor: pointer; }
     .link { background: transparent; border: none; color: #3498db; cursor: pointer; font-size: 13px; padding: 0; width: fit-content; }
 
-    .platforms { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 12px; }
-    .platforms label { display: flex; align-items: center; gap: 8px; font-size: 14px; }
+    /* Platform Toggle */
+    .platforms-toggle { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+    .platform-toggle { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 8px; border: 1px solid #dee2e6; border-radius: 6px; background: #fff; cursor: pointer; transition: all 0.2s ease; }
+    .platform-toggle:hover { background: #f8f9fa; }
+    .platform-toggle input[type=checkbox] { margin: 0; }
 
     .schedule { display: flex; flex-direction: column; gap: 8px; }
     .switch { display: inline-flex; align-items: center; gap: 8px; }
     .schedule-fields { display: flex; gap: 8px; }
 
     .drawer-footer { display: flex; justify-content: flex-end; gap: 8px; padding-top: 8px; border-top: 1px solid #eee; }
-    .btn { padding: 10px 14px; border-radius: 6px; border: 1px solid #dee2e6; background: #fff; cursor: pointer; }
+    .btn { padding: 10px 14px; border-radius: 6px; border: 1px solid #dee2e6; background: #fff; cursor: pointer; transition: all 0.2s ease; }
+    .btn:hover:not(:disabled) { transform: translateY(-1px); }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
     .btn-outline { background: #fff; }
     .btn-primary { background: #3498db; border-color: #3498db; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2980b9; }
+
+    @media (max-width: 768px) {
+      .drawer-panel { width: 100%; }
+      .platform-tabs { flex-direction: column; }
+      .variant-tabs { flex-direction: column; align-items: stretch; }
+      .generate-variants-btn { margin-left: 0; }
+      .platforms-toggle { grid-template-columns: 1fr; }
+    }
   `]
 })
 export class PostDrawerComponent implements OnInit, OnDestroy {
@@ -167,6 +330,15 @@ export class PostDrawerComponent implements OnInit, OnDestroy {
   form: FormGroup;
   isScheduled = false;
   submitted = false;
+  
+  // Platform and variant management
+  activePlatform = 'INSTAGRAM';
+  activeVariant = 'current';
+  contentVariants: ContentVariant[] = [];
+  generatingVariants = false;
+  selectedBrand: Brand | null = null;
+  currentPostId: string | null = null;
+  
   availablePlatforms = [
     { id: 'INSTAGRAM', name: 'Instagram' },
     { id: 'FACEBOOK', name: 'Facebook' },
@@ -177,6 +349,9 @@ export class PostDrawerComponent implements OnInit, OnDestroy {
   timezones = ['UTC','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','Europe/London','Europe/Paris','Asia/Tokyo','Asia/Kolkata'];
 
   private destroy$ = new Subject<void>();
+  private readonly env = inject<Environment>(ENVIRONMENT);
+  private readonly toastService = inject(ToastService);
+  private readonly http = inject(HttpClient);
 
   constructor(private fb: FormBuilder, private service: PostDrawerService, private brandService: BrandService) {
     this.form = this.fb.group({
@@ -200,6 +375,15 @@ export class PostDrawerComponent implements OnInit, OnDestroy {
     // When editing, load post into form
     this.currentPost$.pipe(takeUntil(this.destroy$)).subscribe(post => {
       if (post) {
+        console.log('📝 Post drawer: Loading post into form:', post);
+        
+        // Safety check: Don't set invalid IDs
+        if (post.id && post.id !== 'new' && post.id !== 'undefined') {
+          this.currentPostId = post.id;
+        } else {
+          console.warn('⚠️ Invalid post ID detected:', post.id);
+          this.currentPostId = null;
+        }
         this.form.patchValue({
           brandId: post.brandId,
           title: post.title,
@@ -211,8 +395,21 @@ export class PostDrawerComponent implements OnInit, OnDestroy {
         this.setArray(this.hashtags, post.content.hashtags);
         this.setArray(this.platforms, post.content.platforms);
         this.isScheduled = !!post.schedule;
+        
+        // Set selected brand for brand kit preview
+        if (post.brand) {
+          this.selectedBrand = post.brand;
+        }
+        
+        // Set active platform to first selected platform
+        if (post.content.platforms.length > 0) {
+          this.activePlatform = post.content.platforms[0];
+        }
       } else {
+        this.currentPostId = null;
         this.resetForm();
+        this.contentVariants = [];
+        this.activeVariant = 'current';
       }
     });
 
@@ -220,20 +417,27 @@ export class PostDrawerComponent implements OnInit, OnDestroy {
     this.editMode$.pipe(takeUntil(this.destroy$)).subscribe(mode => {
       if (mode === 'create') {
         // Get current brand and pre-fill if form is empty
-        this.brandService.currentBrand$.pipe(takeUntil(this.destroy$)).subscribe(currentBrand => {
+        this.brandService.currentBrand$.pipe(takeUntil(this.destroy$)).subscribe((currentBrand: Brand | null) => {
           if (currentBrand && !this.form.get('brandId')?.value) {
             this.form.patchValue({ brandId: currentBrand.id });
+            this.selectedBrand = currentBrand;
           }
         });
       }
     });
 
-    // Auto limit inputs
+    // Auto limit inputs based on active platform
     this.form.get('hook')?.valueChanges.pipe(debounceTime(50), takeUntil(this.destroy$)).subscribe(v => {
-      if (v && v.length > 150) this.form.get('hook')?.setValue(v.slice(0,150), { emitEvent: false });
+      const limit = this.getPlatformLimits(this.activePlatform).hookLimit;
+      if (v && v.length > limit) {
+        this.form.get('hook')?.setValue(v.slice(0, limit), { emitEvent: false });
+      }
     });
     this.form.get('body')?.valueChanges.pipe(debounceTime(50), takeUntil(this.destroy$)).subscribe(v => {
-      if (v && v.length > 2200) this.form.get('body')?.setValue(v.slice(0,2200), { emitEvent: false });
+      const limit = this.getPlatformLimits(this.activePlatform).bodyLimit;
+      if (v && v.length > limit) {
+        this.form.get('body')?.setValue(v.slice(0, limit), { emitEvent: false });
+      }
     });
   }
 
@@ -293,6 +497,11 @@ export class PostDrawerComponent implements OnInit, OnDestroy {
   async onSubmit(): Promise<void> {
     this.submitted = true;
     if (!this.canSubmit()) return;
+    
+    // Show optimistic loading state
+    const mode = await firstValueFrom(this.editMode$);
+    const actionText = mode === 'edit' ? 'Updating' : (this.isScheduled ? 'Scheduling' : 'Creating');
+    
     try {
       const v = this.form.value;
       const payload = {
@@ -306,16 +515,22 @@ export class PostDrawerComponent implements OnInit, OnDestroy {
         }
       };
 
-      const mode = await firstValueFrom(this.editMode$);
       let savedPost: Post;
       if (mode === 'edit') {
         const cp = await firstValueFrom(this.currentPost$);
-        if (cp) {
+        console.log('🔍 Edit mode - Current post:', cp);
+        if (cp && cp.id) {
+          console.log('✅ Updating post with ID:', cp.id);
+          // Update existing post
           savedPost = await firstValueFrom(this.service.updatePost(cp.id, payload));
         } else {
-          savedPost = await firstValueFrom(this.service.createPost(payload));
+          console.error('❌ Edit mode but no current post ID available:', cp);
+          // This should not happen in edit mode - throw error instead of creating
+          throw new Error('Cannot update post: No current post ID available');
         }
       } else {
+        console.log('✅ Creating new post');
+        // Create new post
         savedPost = await firstValueFrom(this.service.createPost(payload));
       }
 
@@ -324,19 +539,44 @@ export class PostDrawerComponent implements OnInit, OnDestroy {
         await firstValueFrom(this.service.upsertSchedule(savedPost.id, { runAt: runAtIso, timezone: v.timezone || 'UTC' }));
       }
 
+      // Update currentPostId for new posts
+      if (mode === 'create') {
+        this.currentPostId = savedPost.id;
+      }
+      
+      // Show success toast
+      this.toastService.success(
+        `Post ${mode === 'edit' ? 'updated' : (this.isScheduled ? 'scheduled' : 'created')} successfully!`,
+        `"${savedPost.title}" is now ${this.isScheduled ? 'scheduled' : 'ready'}.`
+      );
+
       this.closeDrawer();
       // Trigger a reload of the posts list
       window.dispatchEvent(new CustomEvent('post-saved'));
     } catch (err: any) {
       console.error('❌ Post submit failed:', err);
-      console.error('❌ Error details:', {
-        message: err?.message,
-        status: err?.status,
-        error: err?.error,
-        url: err?.url
-      });
-      alert(`Failed to save post: ${err?.error?.message || err?.message || 'Unknown error'}. Please try again.`);
+      
+      // Show error toast instead of alert
+      this.toastService.error(
+        `Failed to ${actionText.toLowerCase()} post`,
+        err?.error?.message || err?.message || 'Please try again.',
+        10000
+      );
     }
+  }
+
+  copyPostLink(post: Post): void {
+    const url = `${window.location.origin}${window.location.pathname}?edit=${post.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      this.toastService.success('Link Copied', 'Post edit link copied to clipboard.');
+    }).catch(() => {
+      this.toastService.error('Copy Failed', 'Failed to copy link to clipboard.');
+    });
+  }
+  
+  // Handle image generation events
+  onImagesGenerated(assets: any[]): void {
+    this.toastService.success('Images Generated', `Generated ${assets.length} images for this post.`);
   }
 
   closeIfOverlay(ev: Event): void { if (ev.target === ev.currentTarget) this.closeDrawer(); }
@@ -347,6 +587,116 @@ export class PostDrawerComponent implements OnInit, OnDestroy {
     this.hashtags.clear();
     this.platforms.clear();
     this.isScheduled = false;
+  }
+
+  // New methods for platform tabs and variants
+  selectPlatformTab(platformId: string): void {
+    this.activePlatform = platformId;
+    
+    // Auto-enable platform if not already selected
+    if (!this.isPlatformSelected(platformId)) {
+      this.platforms.push(this.fb.control(platformId));
+    }
+  }
+  
+  onBrandChange(event: Event): void {
+    const target = event.target as HTMLSelectElement;
+    const brandId = target.value;
+    
+    // Find and set selected brand for brand kit preview
+    this.brands$.pipe(takeUntil(this.destroy$)).subscribe((brands: Brand[]) => {
+      this.selectedBrand = brands.find(b => b.id === brandId) || null;
+    });
+  }
+  
+  async generateVariants(): Promise<void> {
+    if (!this.form.get('hook')?.value || !this.form.get('body')?.value) {
+      this.toastService.warning('Content Required', 'Please add hook and body content before generating variants.');
+      return;
+    }
+    
+    const currentPost = await firstValueFrom(this.currentPost$);
+    if (!currentPost?.id) {
+      this.toastService.warning('Save First', 'Please save the post before generating variants.');
+      return;
+    }
+    
+    this.generatingVariants = true;
+    
+    try {
+      const response = await firstValueFrom(
+        this.http.post<VariantsResponse>(`${this.env.apiBaseUrl}/content/variants/${currentPost.id}`, {
+          variantCount: 3,
+          tone: 'engaging'
+        })
+      );
+      
+      this.contentVariants = response.variants;
+      this.toastService.success('Variants Generated', `Created ${response.variants.length} content variants.`);
+    } catch (error: any) {
+      console.error('Failed to generate variants:', error);
+      this.toastService.error('Generation Failed', 'Could not generate content variants. Please try again.');
+    } finally {
+      this.generatingVariants = false;
+    }
+  }
+  
+  getActiveVariantContent(): ContentVariant | null {
+    if (!this.activeVariant.startsWith('variant-')) return null;
+    const index = parseInt(this.activeVariant.replace('variant-', ''));
+    return this.contentVariants[index] || null;
+  }
+  
+  useVariant(): void {
+    const variant = this.getActiveVariantContent();
+    if (!variant) return;
+    
+    // Update form with variant content
+    this.form.patchValue({
+      hook: variant.hook,
+      body: variant.body
+    });
+    
+    // Update hashtags
+    this.setArray(this.hashtags, variant.hashtags);
+    
+    // Switch back to current tab
+    this.activeVariant = 'current';
+    
+    this.toastService.success('Variant Applied', 'Content updated with selected variant.');
+  }
+  
+  getPlatformIcon(platformId: string): string {
+    switch (platformId) {
+      case 'INSTAGRAM': return '📷';
+      case 'FACEBOOK': return '📘';
+      case 'TWITTER': return '🐦';
+      case 'LINKEDIN': return '💼';
+      case 'TIKTOK': return '🎵';
+      default: return '📱';
+    }
+  }
+  
+  getPlatformName(platformId: string): string {
+    const platform = this.availablePlatforms.find(p => p.id === platformId);
+    return platform?.name || platformId;
+  }
+  
+  getPlatformLimits(platformId: string): { hookLimit: number; bodyLimit: number } {
+    switch (platformId) {
+      case 'TWITTER':
+        return { hookLimit: 100, bodyLimit: 280 };
+      case 'INSTAGRAM':
+        return { hookLimit: 150, bodyLimit: 2200 };
+      case 'FACEBOOK':
+        return { hookLimit: 200, bodyLimit: 63206 };
+      case 'LINKEDIN':
+        return { hookLimit: 150, bodyLimit: 3000 };
+      case 'TIKTOK':
+        return { hookLimit: 100, bodyLimit: 2200 };
+      default:
+        return { hookLimit: 150, bodyLimit: 2200 };
+    }
   }
 
   private toLocalDatetime(iso: string): string {

@@ -1,9 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
-
 import { AppService } from './app.service';
 import { PrismaService } from './prisma/prisma.service';
-import { QueueService } from './queue/queue.service';
 import { Public } from './auth/decorators/public.decorator';
+import { SkipTenantScoping } from './common/decorators/tenant-scoping.decorator';
+import { QueueService } from './queue/queue.service';
 
 @Controller()
 export class AppController {
@@ -13,13 +13,15 @@ export class AppController {
     private readonly queueService: QueueService
   ) {}
 
-  @Public()
   @Get()
-  getData() {
-    return this.appService.getData();
+  @Public()
+  @SkipTenantScoping()
+  getHello(): string {
+    return this.appService.getHello();
   }
 
   @Public()
+  @SkipTenantScoping()
   @Get('health')
   async getHealth() {
     try {

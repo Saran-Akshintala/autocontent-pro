@@ -23,6 +23,10 @@ bootstrapApplication(AppComponent, {
     {
       provide: ENVIRONMENT,
       useValue: environment
+    },
+    {
+      provide: 'API_BASE_URL',
+      useValue: environment
     }
   ]
 }).catch((err) => console.error(err));

@@ -1,14 +1,15 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ContentController } from './content.controller';
 import { ContentService } from './content.service';
-import { PrismaModule } from '../prisma/prisma.module';
+import { PrismaService } from '../prisma/prisma.service';
 import { AIModule } from '../ai/ai.module';
 import { QueueModule } from '../queue/queue.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
-  imports: [PrismaModule, AIModule, forwardRef(() => QueueModule)],
+  imports: [AIModule, BillingModule, forwardRef(() => QueueModule)],
   controllers: [ContentController],
-  providers: [ContentService],
+  providers: [ContentService, PrismaService],
   exports: [ContentService],
 })
 export class ContentModule {}

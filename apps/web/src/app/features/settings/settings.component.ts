@@ -2,13 +2,18 @@ import { Component, inject, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
 import { Subject, takeUntil, interval } from 'rxjs';
+import { ActivatedRoute, Router } from '@angular/router';
 import { AuthService } from '../../core/services/auth.service';
 import { ENVIRONMENT, Environment } from '../../core/tokens/environment.token';
+import { AnalyticsComponent } from '../analytics/analytics.component';
+import { AdminComponent } from '../admin/admin.component';
+import { BillingComponent } from '../billing/billing.component';
+import { AffiliateComponent } from '../affiliate/affiliate.component';
 
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, AnalyticsComponent, AdminComponent, BillingComponent, AffiliateComponent],
   template: `
     <div class="settings-page">
       <div class="page-header">
@@ -19,173 +24,198 @@ import { ENVIRONMENT, Environment } from '../../core/tokens/environment.token';
       <div class="settings-content">
         <div class="settings-sidebar">
           <nav class="settings-nav">
-            <a href="#" class="nav-item active">👤 Profile</a>
-            <a href="#" class="nav-item">🏢 Organization</a>
-            <a href="#" class="nav-item">🔗 Integrations</a>
-            <a href="#" class="nav-item">📊 Analytics</a>
-            <a href="#" class="nav-item">🔔 Notifications</a>
-            <a href="#" class="nav-item">🔒 Security</a>
-            <a href="#" class="nav-item">💳 Billing</a>
+            <button class="nav-item" [class.active]="activeTab === 'profile'" (click)="setActiveTab('profile')">👤 Profile</button>
+            <button class="nav-item" [class.active]="activeTab === 'integrations'" (click)="setActiveTab('integrations')">🔗 Integrations</button>
+            <button class="nav-item" [class.active]="activeTab === 'analytics'" (click)="setActiveTab('analytics')">📊 Analytics</button>
+            <button class="nav-item" [class.active]="activeTab === 'billing'" (click)="setActiveTab('billing')">💳 Billing</button>
+            <button class="nav-item" [class.active]="activeTab === 'affiliate'" (click)="setActiveTab('affiliate')">💰 Affiliate</button>
+            <button class="nav-item" [class.active]="activeTab === 'admin'" (click)="setActiveTab('admin')">🛡️ Admin</button>
           </nav>
         </div>
 
         <div class="settings-main">
-          <div class="settings-section">
-            <div class="section-header">
-              <h3>Profile Information</h3>
-              <p>Update your personal information and preferences</p>
+          <!-- Profile Tab -->
+          <div *ngIf="activeTab === 'profile'">
+            <div class="settings-section">
+              <div class="section-header">
+                <h3>Profile Information</h3>
+                <p>Update your personal information and preferences</p>
+              </div>
+
+              <div class="form-grid">
+                <div class="form-group">
+                  <label>First Name</label>
+                  <input type="text" class="form-control" [value]="getCurrentUser()?.firstName || ''" readonly>
+                </div>
+                <div class="form-group">
+                  <label>Last Name</label>
+                  <input type="text" class="form-control" [value]="getCurrentUser()?.lastName || ''" readonly>
+                </div>
+                <div class="form-group full-width">
+                  <label>Email Address</label>
+                  <input type="email" class="form-control" [value]="getCurrentUser()?.email || ''" readonly>
+                </div>
+              </div>
             </div>
 
-            <div class="form-grid">
-              <div class="form-group">
-                <label>First Name</label>
-                <input type="text" class="form-control" [value]="getCurrentUser()?.firstName || ''" readonly>
+            <div class="settings-section">
+              <div class="section-header">
+                <h3>Current Organization</h3>
+                <p>Your role and permissions in the current organization</p>
               </div>
-              <div class="form-group">
-                <label>Last Name</label>
-                <input type="text" class="form-control" [value]="getCurrentUser()?.lastName || ''" readonly>
-              </div>
-              <div class="form-group full-width">
-                <label>Email Address</label>
-                <input type="email" class="form-control" [value]="getCurrentUser()?.email || ''" readonly>
+
+              <div class="org-info" *ngIf="authService.authState$ | async as authState">
+                <div class="org-card">
+                  <div class="org-details">
+                    <h4>{{ authState.currentTenant?.tenantName || 'No Organization Selected' }}</h4>
+                    <p class="org-role">{{ authState.currentTenant?.role || 'No Role' }}</p>
+                  </div>
+                  <div class="org-actions">
+                    <button class="btn btn-outline" *ngIf="authState.user && authState.user.tenants.length > 1">
+                      Switch Organization
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="settings-section">
-            <div class="section-header">
-              <h3>Current Organization</h3>
-              <p>Your role and permissions in the current organization</p>
-            </div>
+          <!-- Integrations Tab -->
+          <div *ngIf="activeTab === 'integrations'">
+            <div class="settings-section">
+              <div class="section-header">
+                <h3>Connected Platforms</h3>
+                <p>Manage your social media platform connections</p>
+              </div>
 
-            <div class="org-info" *ngIf="authService.authState$ | async as authState">
-              <div class="org-card">
-                <div class="org-details">
-                  <h4>{{ authState.currentTenant?.tenantName || 'No Organization Selected' }}</h4>
-                  <p class="org-role">{{ authState.currentTenant?.role || 'No Role' }}</p>
-                </div>
-                <div class="org-actions">
-                  <button class="btn btn-outline" *ngIf="authState.user && authState.user.tenants.length > 1">
-                    Switch Organization
+              <div class="platforms-grid">
+                <div class="platform-card">
+                  <div class="platform-info">
+                    <span class="platform-icon">💬</span>
+                    <div>
+                      <h4>WhatsApp</h4>
+                      <p class="platform-status" [class.connected]="whatsappStatus?.isConnected" [class.disconnected]="!whatsappStatus?.isConnected">
+                        {{ whatsappStatus?.isConnected ? 'Connected as ' + whatsappStatus.connectedName : 'Not Connected' }}
+                      </p>
+                    </div>
+                  </div>
+                  <button 
+                    class="btn" 
+                    [class.btn-danger]="whatsappStatus?.isConnected" 
+                    [class.btn-primary]="!whatsappStatus?.isConnected"
+                    [disabled]="whatsappConnecting"
+                    (click)="whatsappStatus?.isConnected ? disconnectWhatsApp() : connectWhatsApp()">
+                    {{ whatsappConnecting ? 'Connecting...' : (whatsappStatus?.isConnected ? 'Disconnect' : 'Connect') }}
                   </button>
                 </div>
+
+                <div class="platform-card">
+                  <div class="platform-info">
+                    <span class="platform-icon">📷</span>
+                    <div>
+                      <h4>Instagram</h4>
+                      <p class="platform-status disconnected">Not Connected</p>
+                    </div>
+                  </div>
+                  <button class="btn btn-primary">Connect</button>
+                </div>
+
+                <div class="platform-card">
+                  <div class="platform-info">
+                    <span class="platform-icon">💼</span>
+                    <div>
+                      <h4>LinkedIn</h4>
+                      <p class="platform-status disconnected">Not Connected</p>
+                    </div>
+                  </div>
+                  <button class="btn btn-primary">Connect</button>
+                </div>
+
+                <div class="platform-card">
+                  <div class="platform-info">
+                    <span class="platform-icon">🐦</span>
+                    <div>
+                      <h4>Twitter</h4>
+                      <p class="platform-status disconnected">Not Connected</p>
+                    </div>
+                  </div>
+                  <button class="btn btn-primary">Connect</button>
+                </div>
+
+                <div class="platform-card">
+                  <div class="platform-info">
+                    <span class="platform-icon">📘</span>
+                    <div>
+                      <h4>Facebook</h4>
+                      <p class="platform-status disconnected">Not Connected</p>
+                    </div>
+                  </div>
+                  <button class="btn btn-primary">Connect</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-section">
+              <div class="section-header">
+                <h3>Preferences</h3>
+                <p>Customize your application experience</p>
+              </div>
+
+              <div class="preferences-list">
+                <div class="preference-item">
+                  <div class="preference-info">
+                    <h4>Email Notifications</h4>
+                    <p>Receive email updates about your content and team activity</p>
+                  </div>
+                  <label class="toggle">
+                    <input type="checkbox" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+
+                <div class="preference-item">
+                  <div class="preference-info">
+                    <h4>Push Notifications</h4>
+                    <p>Get browser notifications for important updates</p>
+                  </div>
+                  <label class="toggle">
+                    <input type="checkbox">
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+
+                <div class="preference-item">
+                  <div class="preference-info">
+                    <h4>Auto-save Drafts</h4>
+                    <p>Automatically save your work as you type</p>
+                  </div>
+                  <label class="toggle">
+                    <input type="checkbox" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
               </div>
             </div>
           </div>
 
-          <div class="settings-section">
-            <div class="section-header">
-              <h3>Connected Platforms</h3>
-              <p>Manage your social media platform connections</p>
-            </div>
-
-            <div class="platforms-grid">
-              <div class="platform-card">
-                <div class="platform-info">
-                  <span class="platform-icon">💬</span>
-                  <div>
-                    <h4>WhatsApp</h4>
-                    <p class="platform-status" [class.connected]="whatsappStatus?.isConnected" [class.disconnected]="!whatsappStatus?.isConnected">
-                      {{ whatsappStatus?.isConnected ? 'Connected as ' + whatsappStatus.connectedName : 'Not Connected' }}
-                    </p>
-                  </div>
-                </div>
-                <button 
-                  class="btn" 
-                  [class.btn-danger]="whatsappStatus?.isConnected" 
-                  [class.btn-primary]="!whatsappStatus?.isConnected"
-                  [disabled]="whatsappConnecting"
-                  (click)="whatsappStatus?.isConnected ? disconnectWhatsApp() : connectWhatsApp()">
-                  {{ whatsappConnecting ? 'Connecting...' : (whatsappStatus?.isConnected ? 'Disconnect' : 'Connect') }}
-                </button>
-              </div>
-
-              <div class="platform-card">
-                <div class="platform-info">
-                  <span class="platform-icon">📷</span>
-                  <div>
-                    <h4>Instagram</h4>
-                    <p class="platform-status disconnected">Not Connected</p>
-                  </div>
-                </div>
-                <button class="btn btn-primary">Connect</button>
-              </div>
-
-              <div class="platform-card">
-                <div class="platform-info">
-                  <span class="platform-icon">💼</span>
-                  <div>
-                    <h4>LinkedIn</h4>
-                    <p class="platform-status disconnected">Not Connected</p>
-                  </div>
-                </div>
-                <button class="btn btn-primary">Connect</button>
-              </div>
-
-              <div class="platform-card">
-                <div class="platform-info">
-                  <span class="platform-icon">🐦</span>
-                  <div>
-                    <h4>Twitter</h4>
-                    <p class="platform-status disconnected">Not Connected</p>
-                  </div>
-                </div>
-                <button class="btn btn-primary">Connect</button>
-              </div>
-
-              <div class="platform-card">
-                <div class="platform-info">
-                  <span class="platform-icon">📘</span>
-                  <div>
-                    <h4>Facebook</h4>
-                    <p class="platform-status disconnected">Not Connected</p>
-                  </div>
-                </div>
-                <button class="btn btn-primary">Connect</button>
-              </div>
-            </div>
+          <!-- Analytics Tab -->
+          <div *ngIf="activeTab === 'analytics'" class="tab-content">
+            <app-analytics></app-analytics>
           </div>
 
-          <div class="settings-section">
-            <div class="section-header">
-              <h3>Preferences</h3>
-              <p>Customize your application experience</p>
-            </div>
+          <!-- Billing Tab -->
+          <div *ngIf="activeTab === 'billing'" class="tab-content">
+            <app-billing></app-billing>
+          </div>
 
-            <div class="preferences-list">
-              <div class="preference-item">
-                <div class="preference-info">
-                  <h4>Email Notifications</h4>
-                  <p>Receive email updates about your content and team activity</p>
-                </div>
-                <label class="toggle">
-                  <input type="checkbox" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
+          <!-- Affiliate Tab -->
+          <div *ngIf="activeTab === 'affiliate'" class="tab-content">
+            <app-affiliate></app-affiliate>
+          </div>
 
-              <div class="preference-item">
-                <div class="preference-info">
-                  <h4>Push Notifications</h4>
-                  <p>Get browser notifications for important updates</p>
-                </div>
-                <label class="toggle">
-                  <input type="checkbox">
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-
-              <div class="preference-item">
-                <div class="preference-info">
-                  <h4>Auto-save Drafts</h4>
-                  <p>Automatically save your work as you type</p>
-                </div>
-                <label class="toggle">
-                  <input type="checkbox" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-            </div>
+          <!-- Admin Tab -->
+          <div *ngIf="activeTab === 'admin'" class="tab-content">
+            <app-admin></app-admin>
           </div>
         </div>
       </div>
@@ -290,6 +320,11 @@ import { ENVIRONMENT, Environment } from '../../core/tokens/environment.token';
       font-size: 14px;
       font-weight: 500;
       transition: all 0.2s ease;
+      background: none;
+      border: none;
+      width: 100%;
+      text-align: left;
+      cursor: pointer;
     }
 
     .nav-item:hover {
@@ -569,6 +604,15 @@ import { ENVIRONMENT, Environment } from '../../core/tokens/environment.token';
       cursor: not-allowed;
     }
 
+    .tab-content {
+      width: 100%;
+    }
+
+    .tab-content > * {
+      max-width: none;
+      margin: 0;
+    }
+
     /* Modal Styles */
     .modal-overlay {
       position: fixed;
@@ -808,7 +852,12 @@ export class SettingsComponent implements OnInit, OnDestroy {
   public readonly authService = inject(AuthService);
   private readonly http = inject(HttpClient);
   private readonly env = inject<Environment>(ENVIRONMENT);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private destroy$ = new Subject<void>();
+
+  // Tab management
+  activeTab: string = 'profile';
 
   // WhatsApp connection state
   whatsappStatus: any = null;
@@ -818,6 +867,14 @@ export class SettingsComponent implements OnInit, OnDestroy {
   currentSessionId: string | null = null;
 
   ngOnInit(): void {
+    // Check for tab parameter in URL
+    this.route.queryParams.pipe(takeUntil(this.destroy$)).subscribe(params => {
+      const tab = params['tab'];
+      if (tab && ['profile', 'integrations', 'analytics', 'billing', 'affiliate', 'admin'].includes(tab)) {
+        this.activeTab = tab;
+      }
+    });
+
     this.loadWhatsAppStatus();
     
     // Poll for status updates every 5 seconds
@@ -837,6 +894,16 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
   getCurrentUser() {
     return this.authService.currentUser;
+  }
+
+  setActiveTab(tab: string): void {
+    this.activeTab = tab;
+    // Update URL with tab parameter
+    this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: { tab },
+      queryParamsHandling: 'merge'
+    });
   }
 
   async loadWhatsAppStatus(): Promise<void> {

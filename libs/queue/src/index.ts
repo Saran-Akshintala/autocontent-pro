@@ -2,7 +2,13 @@
 
 import { Queue, Worker, Job, QueueOptions, WorkerOptions } from 'bullmq';
 import { Redis } from 'ioredis';
-import { WhatsAppJobData } from '@autocontent-pro/types';
+
+// Local interface to avoid circular dependency
+export interface WhatsAppJobData {
+  to: string;
+  message: string;
+  campaignId?: string;
+}
 
 // Queue Names
 export enum QueueNames {

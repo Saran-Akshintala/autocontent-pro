@@ -52,7 +52,7 @@ export class ContentController {
     @Param('postId') postId: string,
     @Body() variantsRequest: GenerateVariantsRequest
   ) {
-    return this.contentService.generateContentVariants(
+    return this.contentService.generateVariants(
       tenantId,
       postId,
       variantsRequest
